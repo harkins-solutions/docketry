@@ -1,0 +1,30 @@
+# Example: small litigation firm intake pipeline.
+# Stages run left to right. A gate's binds_to must sit inside the stages the
+# gate declares itself meant for — binding it elsewhere refuses to load.
+
+[pipeline]
+stages = ["ingest", "review"]
+
+[[gate]]
+id = "sender-scope"
+binds_to = ["ingest"]
+on_fail = "bounce"          # unexpected senders park for a human, never flow through
+authority = "paralegal"
+
+[gate.options]
+allow = ["@myflcourtaccess.com", "@examplefirm.com"]
+
+[[gate]]
+id = "attachment-policy"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+[gate.options]
+max_size_mb = 25
+
+[[gate]]
+id = "provenance-stamp"
+binds_to = ["ingest"]
+on_fail = "warn"
+authority = "paralegal"

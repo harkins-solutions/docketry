@@ -1,0 +1,176 @@
+"""Portico CLI: init, poll, queue, approve, advance, status."""
+from __future__ import annotations
+
+import argparse
+import getpass
+import json
+import sys
+from pathlib import Path
+
+from . import __version__
+from . import store as st
+from .config import MANIFEST_NAME, load_home, write_config
+from .envelope import parse_message
+from .mailbox import IntakeMailbox
+from .manifest import DEFAULT_MANIFEST, load_manifest
+from .pipeline import GateRefusal, Runner
+from .store import Store
+
+
+def _open(home: str):
+    cfg = load_home(home)
+    if not cfg.manifest_path.exists():
+        sys.exit(f"no {MANIFEST_NAME} in {home} — run: portico init")
+    pipeline = load_manifest(cfg.manifest_path)
+    return cfg, pipeline, Store(cfg.store_path)
+
+
+def cmd_init(args) -> None:
+    home = Path(args.home)
+    host = args.host or input("IMAP host of the intake mailbox (e.g. imap.gmail.com): ").strip()
+    user = args.user or input("Intake mailbox address (e.g. intake@yourfirm.com): ").strip()
+    folder = args.folder or "INBOX"
+    password = None
+    if args.store_password:
+        password = getpass.getpass("Mailbox password/app password (stored 0600): ")
+    write_config(home, host=host, user=user, folder=folder, password=password)
+    manifest = home / MANIFEST_NAME
+    if not manifest.exists():
+        manifest.write_text(DEFAULT_MANIFEST)
+    load_manifest(manifest)  # refuse to init half-configured
+    print(f"initialized {home}")
+    print(f"  config:    {home / 'config.toml'}")
+    print(f"  manifest:  {manifest}")
+    if not password:
+        print("  password:  set PORTICO_IMAP_PASSWORD in the environment")
+    print("next: point a forwarding rule at the intake mailbox, then run: portico poll")
+
+
+def cmd_poll(args) -> None:
+    cfg, pipeline, store = _open(args.home)
+    if cfg.mailbox is None:
+        sys.exit("no [mailbox] configured — run: portico init")
+    if not cfg.mailbox.password:
+        sys.exit("no mailbox password (set PORTICO_IMAP_PASSWORD)")
+    runner = Runner(pipeline, store)
+    first_stage = pipeline.stages[0]
+    ingested = held = 0
+    with IntakeMailbox(cfg.mailbox) as mb:
+        uidvalidity, last_uid = store.imap_cursor(mb.label)
+        current_validity = mb.uidvalidity()
+        if uidvalidity is not None and current_validity != uidvalidity:
+            print("mailbox UIDVALIDITY changed; resweeping from the start (dedupe is by content hash)")
+            last_uid = 0
+        max_uid = last_uid
+        for uid, raw in mb.new_messages(last_uid):
+            env = parse_message(raw, source=mb.label, fetched_at=st.utcnow())
+            msg_id = store.ingest(env, first_stage=first_stage)
+            max_uid = max(max_uid, uid)
+            if msg_id is None:
+                continue
+            ingested += 1
+            status = runner.enter(msg_id)
+            if status in (st.PENDING_REVIEW, st.BLOCKED):
+                held += 1
+        store.set_imap_cursor(mb.label, current_validity, max_uid)
+    print(f"ingested {ingested} new message(s); {held} held for review")
+    if held:
+        print("run: portico queue")
+
+
+def _print_row(store: Store, row) -> None:
+    env = json.loads(row["envelope_json"])
+    print(f"[{row['id']}] {row['status']} @ {row['stage']}  {env['subject']!r}  from {env['from_addr']}")
+    for f in store.findings_for(row["id"]):
+        if f["severity"] != "info":
+            print(f"     {f['severity']}: ({f['gate_id']}) {f['summary']}")
+
+
+def cmd_queue(args) -> None:
+    _, _, store = _open(args.home)
+    rows = store.list_by_status(st.PENDING_REVIEW) + store.list_by_status(st.BLOCKED)
+    if not rows:
+        print("queue empty")
+        return
+    for row in rows:
+        _print_row(store, row)
+
+
+def cmd_approve(args) -> None:
+    cfg, pipeline, store = _open(args.home)
+    row = store.get_message(args.message)
+    if row is None:
+        sys.exit(f"no message {args.message}")
+    store.add_approval(
+        args.message, row["stage"], args.gate,
+        approved_by=args.by, role=args.role, note=args.note or "",
+    )
+    runner = Runner(pipeline, store)
+    try:
+        status = runner.advance(args.message)
+        print(f"approved; message {args.message} -> {status}")
+    except GateRefusal as e:
+        print(f"approval recorded, but: {e}")
+
+
+def cmd_advance(args) -> None:
+    _, pipeline, store = _open(args.home)
+    runner = Runner(pipeline, store)
+    try:
+        status = runner.advance(args.message)
+        print(f"message {args.message} -> {status}")
+    except GateRefusal as e:
+        sys.exit(str(e))
+
+
+def cmd_status(args) -> None:
+    _, _, store = _open(args.home)
+    counts = store.counts()
+    if not counts:
+        print("no messages yet")
+        return
+    for status, n in sorted(counts.items()):
+        print(f"{status:15} {n}")
+
+
+def main(argv=None) -> None:
+    p = argparse.ArgumentParser(prog="portico", description="Local gate-enforced email port")
+    p.add_argument("--home", default="./portico-home", help="installation directory")
+    p.add_argument("--version", action="version", version=f"portico {__version__}")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sp = sub.add_parser("init", help="set up a Portico home directory")
+    sp.add_argument("--host")
+    sp.add_argument("--user")
+    sp.add_argument("--folder")
+    sp.add_argument("--store-password", action="store_true",
+                    help="prompt for the password and store it in config.toml (0600)")
+    sp.set_defaults(fn=cmd_init)
+
+    sp = sub.add_parser("poll", help="sweep the intake mailbox once")
+    sp.set_defaults(fn=cmd_poll)
+
+    sp = sub.add_parser("queue", help="list messages held for review")
+    sp.set_defaults(fn=cmd_queue)
+
+    sp = sub.add_parser("approve", help="record an authority approval and release a hold")
+    sp.add_argument("message", type=int)
+    sp.add_argument("--gate", required=True)
+    sp.add_argument("--by", required=True, help="name of the approving person")
+    sp.add_argument("--role", required=True, help="role granted the authority in the manifest")
+    sp.add_argument("--note")
+    sp.set_defaults(fn=cmd_approve)
+
+    sp = sub.add_parser("advance", help="move a message one stage forward")
+    sp.add_argument("message", type=int)
+    sp.set_defaults(fn=cmd_advance)
+
+    sp = sub.add_parser("status", help="message counts by status")
+    sp.set_defaults(fn=cmd_status)
+
+    args = p.parse_args(argv)
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()

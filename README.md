@@ -1,0 +1,65 @@
+# Portico
+
+*Working name — a local, gate-enforced port that a law firm's email flows into.*
+
+Most firms work out of their email. Portico meets them there — without going
+into their email. The firm creates a **dedicated intake mailbox** (for example
+`intake@yourfirm.com`), points forwarding rules at it, and Portico drains that
+one mailbox with credentials the firm holds. Nothing enters the pipeline that
+the firm didn't send across the boundary.
+
+Portico is the **base layer** of a family of small, composable open-source
+legal workflow tools (document classification, e-service notice parsing,
+citation verification, draft linting). Each plugs into the port as a **gate**
+in a declared pipeline.
+
+## What makes it different
+
+Best practices here are **code, not suggestions**:
+
+- A message cannot cross a stage boundary without passing its gates or
+  carrying a recorded approval from the role the manifest names. `advance()`
+  is the only forward path and it re-checks every time. There is no advisory
+  mode and no bypass flag.
+- Gates declare which pipeline stages they are meant for; binding one
+  elsewhere is a load-time error, not a footnote in documentation.
+- Every finding and every human approval lands in an audit table on the
+  firm's own disk.
+
+## What it is not
+
+- **Not hosted.** Portico runs on the firm's machine. We never hold, transit,
+  or store anyone's email.
+- **Not a security product.** Portico makes no malware, phishing, or other
+  cybersecurity claims. Its attachment and sender gates are pipeline-hygiene
+  policy — what the *pipeline* accepts — nothing more. Get real security from
+  your mail provider and endpoint tooling.
+- **Not legal advice, and not a currency service.** Portico never claims any
+  rule, deadline, or authority is up to date. It checks the inputs you give
+  it against the sources you point it at, and it fails loudly.
+
+## Quickstart
+
+```console
+$ pip install portico-legal
+$ portico init --host imap.gmail.com --user intake@yourfirm.com
+$ export PORTICO_IMAP_PASSWORD='app-password-here'
+$ portico poll        # sweep the intake mailbox once
+$ portico queue       # see anything a gate held for review
+$ portico approve 3 --gate sender-scope --by "Dana" --role paralegal
+$ portico status
+```
+
+The pipeline is declared in `guardrails.toml` in your Portico home directory
+(see `examples/guardrails.toml`). Reading the intake mailbox is strictly
+read-only: messages are never marked, moved, or deleted.
+
+## Requirements
+
+Python 3.11+. The core is stdlib-only. Feature plugins declare extras
+(`pip install "portico-legal[pdf,ocr]"` etc.) — see [FEATURES.md](FEATURES.md)
+for the feature manifest and its dependency graph.
+
+## License
+
+Apache-2.0.
