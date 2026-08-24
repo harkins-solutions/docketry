@@ -72,6 +72,11 @@ def cmd_poll(args) -> None:
             if msg_id is None:
                 continue
             ingested += 1
+            from .classify import classify as _classify
+            for att in store.attachments_for(msg_id):
+                label, tier = _classify(att["filename"])
+                if tier != "low":
+                    store.stage_classification(att["id"], label, tier)
             result = notices_mod.parse(env, adapter_stack)
             if result is not None:
                 store.add_notice(msg_id, result.adapter, result.notice_type,
@@ -212,6 +217,36 @@ def cmd_lint(args) -> None:
         sys.exit(1)
 
 
+def cmd_classify(args) -> None:
+    from .classify import classify
+    from .extract import ExtractionError, extract_path
+
+    text = ""
+    try:
+        text = extract_path(args.file).full_text
+    except ExtractionError:
+        pass  # title-only classification still works
+    label, tier = classify(Path(args.file).stem, text)
+    print(f"{label} ({tier})")
+
+
+def cmd_class_queue(args) -> None:
+    _, _, store = _open(args.home)
+    rows = store.open_classifications()
+    if not rows:
+        print("no staged classifications")
+        return
+    for r in rows:
+        current = f" (current: {r['doc_type']})" if r["doc_type"] else ""
+        print(f"[{r['id']}] {r['filename']} -> {r['label']} ({r['tier']}){current}")
+
+
+def cmd_class_apply(args) -> None:
+    _, _, store = _open(args.home)
+    outcome = store.apply_classification(args.id, by=args.by, role=args.role)
+    print(outcome)
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -268,6 +303,19 @@ def main(argv=None) -> None:
     sp.add_argument("file", help="draft file (.docx, .pdf, .txt)")
     sp.add_argument("--rules", help="firm rulepack (TOML)")
     sp.set_defaults(fn=cmd_lint)
+
+    sp = sub.add_parser("classify", help="classify one document (deterministic, proposes only)")
+    sp.add_argument("file")
+    sp.set_defaults(fn=cmd_classify)
+
+    sp = sub.add_parser("class-queue", help="list staged doc-type proposals")
+    sp.set_defaults(fn=cmd_class_queue)
+
+    sp = sub.add_parser("class-apply", help="apply a staged proposal (fill-only)")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--by", required=True)
+    sp.add_argument("--role", required=True)
+    sp.set_defaults(fn=cmd_class_apply)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)

@@ -66,7 +66,7 @@ review queue — template drift fails loudly, never silently.
 - Internal: F0 (envelope). Does **not** need F2 (works on the email body).
 - External: none.
 
-### F4 — Document classifier *(gate)*
+### F4 — Document classifier — SHIPPED v0.6
 Types an attachment (motion / order / notice / discovery / correspondence…)
 deterministically (title + text anchors). All downstream writes are
 stage-for-approval, fill-only.
