@@ -1,0 +1,14 @@
+# Example firm style rulepack for `portico lint --rules`.
+# Rules are data: share packs between firms the way linter configs are shared.
+
+[[rule]]
+id = "no-em-dash"
+pattern = "—"
+severity = "warn"
+message = "house style: no em dashes in filed documents"
+
+[[rule]]
+id = "clearly-obviously"
+pattern = '\b(clearly|obviously|undeniably)\b'
+severity = "warn"
+message = "conclusory intensifier; let the record carry the weight"
