@@ -1,0 +1,50 @@
+name: Release binaries
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: portico-windows.exe
+          - os: macos-latest
+            artifact: portico-macos
+          - os: ubuntu-latest
+            artifact: portico-linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build single-file executable
+        run: |
+          pip install pyinstaller pypdf python-docx eyecite httpx
+          pyinstaller --onefile --name portico --collect-data reporters_db --collect-data courts_db portico_app.py
+      - name: Rename artifact
+        shell: bash
+        run: mv dist/portico* "dist/${{ matrix.artifact }}" 2>/dev/null || mv dist/portico.exe "dist/${{ matrix.artifact }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
