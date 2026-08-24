@@ -3,6 +3,7 @@ import unittest
 from portico.cite import (
     CiteError, Lookup, name_matches, quotes_near, star_pages, verify,
 )
+from portico.cite import citation_inventory  # noqa: F401
 
 try:
     import eyecite  # noqa: F401
@@ -34,6 +35,24 @@ class TestNameMatch(unittest.TestCase):
 
     def test_empty_cited_name_passes(self):
         self.assertTrue(name_matches("", "", "Anything v. Anyone"))
+
+
+@unittest.skipUnless(HAVE_EYECITE, "eyecite not installed")
+class TestShortForm(unittest.TestCase):
+    def test_short_only_document_fails_loudly(self):
+        text = "The court weighed experts at summary judgment. 329 So. 3d at 153-54."
+        report = verify(text, FakeClient({}))
+        self.assertEqual(report.short_citations, 1)
+        self.assertTrue(report.failed)
+        self.assertIn("unverifiable as written", report.findings[0].summary)
+
+    def test_shorts_with_fulls_are_info(self):
+        table = {"260 So. 3d 323": (Lookup(True, "Puhl v. Puhl", 7), "", None)}
+        text = ("Puhl v. Puhl, 260 So. 3d 323 (Fla. 4th DCA 2018). "
+                "Later the court repeated it. 260 So. 3d at 324.")
+        report = verify(text, FakeClient(table))
+        self.assertFalse(report.failed)
+        self.assertGreaterEqual(report.short_citations, 1)
 
 
 class TestQuotesAndPages(unittest.TestCase):
