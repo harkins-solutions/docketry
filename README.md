@@ -48,6 +48,20 @@ a Portico home the way you protect the rest of the client file system —
 OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
 Nothing is ever copied off the machine.
 
+## Try it in sixty seconds
+
+```console
+$ pip install portico-legal
+$ portico demo
+```
+
+`demo` seeds a disposable home with sample traffic — a clean service notice,
+a federal NEF, a hearing notice, a drifted portal template, and an unknown
+sender — and opens the local dashboard so you can watch the gates hold the
+right three and release them yourself. No mailbox, no configuration, nothing
+saved. (Downloadable one-file executables for Windows/macOS/Linux attach to
+tagged releases — double-clicking one opens this same demo.)
+
 ## Quickstart
 
 ```console

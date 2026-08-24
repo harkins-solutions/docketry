@@ -221,3 +221,49 @@ class TestCliQol(unittest.TestCase):
                             "--gate", "sender-scope", "--by", "Dana", "--role", "paralegal")
         self.assertEqual(code, 0)
         self.assertIn("done", out)
+
+
+class TestDemo(unittest.TestCase):
+    def test_demo_seeds_and_serves(self):
+        import threading
+        import http.client
+        from unittest import mock
+        import portico.cli as cli_mod
+
+        started = {}
+        real_serve = None
+
+        class Args:
+            port = 0
+            no_browser = True
+
+        # capture the server instead of blocking forever
+        from portico import webui as webui_mod
+        real_make = webui_mod.make_server
+
+        def capture_make(store_path, pipeline, host="127.0.0.1", port=0):
+            server = real_make(store_path, pipeline, host=host, port=port)
+            started["server"] = server
+            raise KeyboardInterrupt  # unwind out of serve_forever path
+
+        with mock.patch.object(cli_mod, "webbrowser") if hasattr(cli_mod, "webbrowser") else mock.patch("webbrowser.open"):
+            with mock.patch("portico.cli.make_server", capture_make, create=True):
+                with mock.patch("portico.webui.make_server", capture_make):
+                    try:
+                        run_cli("demo", "--no-browser")
+                    except KeyboardInterrupt:
+                        pass
+        server = started.get("server")
+        self.assertIsNotNone(server, "demo never built its server")
+        port = server.server_address[1]
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/")
+        body = conn.getresponse().read().decode()
+        server.shutdown()
+        self.assertIn("Held for review", body)
+        self.assertIn("sketchy.example", body)          # stranger held
+        self.assertIn("did not extract", body)          # drifted template held
+        self.assertIn("Hearing Scheduled", body.replace("&#x27;", "'")) if "Hearing" in body else None
+        self.assertIn("service_notice", body)

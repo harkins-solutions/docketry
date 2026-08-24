@@ -416,6 +416,119 @@ def cmd_digest(args) -> None:
     print("\n".join(lines))
 
 
+def cmd_demo(args) -> None:
+    """Seed a disposable home with sample traffic and open the dashboard."""
+    import tempfile
+    import webbrowser
+    from email.message import EmailMessage
+
+    from . import notices as nmod
+    from .classify import classify as _classify
+    from .envelope import parse_message
+    from .manifest import load_manifest
+    from .pipeline import Runner
+    from .store import Store
+    from .webui import make_server
+
+    home = Path(tempfile.mkdtemp(prefix="portico-demo-"))
+    (home / "guardrails.toml").write_text(DEMO_MANIFEST)
+    pipeline = load_manifest(home / "guardrails.toml")
+    store = Store(home / "store")
+    runner = Runner(pipeline, store)
+    adapter_stack = nmod.stack()
+
+    def mail(from_addr, subject, body, attach=None):
+        m = EmailMessage()
+        m["From"] = from_addr
+        m["To"] = "intake@demofirm.example"
+        m["Subject"] = subject
+        m.set_content(body)
+        if attach:
+            m.add_attachment(b"%PDF-1.4 demo", maintype="application",
+                             subtype="pdf", filename=attach)
+        return bytes(m)
+
+    samples = [
+        mail("eservice@myflcourtaccess.com", "SERVICE OF COURT DOCUMENT",
+             "Case Number: 562026CA000123\nCase Style: DOE v. ACME INSURANCE\n"
+             "Document: Motion for Summary Judgment\nServed: you@demofirm.example\n",
+             attach="Motion for Summary Judgment.pdf"),
+        mail("ecf_bounces@flsd.uscourts.gov",
+             "Activity in Case 2:26-cv-00123-XYZ Doe v. Acme Order on Motion",
+             "Document Number: 45\nDocket Text: ORDER granting in part.\n"
+             "https://ecf.flsd.uscourts.gov/doc1/demo (one-time free look —"
+             " captured, never fetched)\n"),
+        mail("ja@circuit19.example", "Hearing Scheduled",
+             "Judicial Automated Calendaring System\nCase Number: 562026CA000123\n"
+             "Hearing Date: 09/15/2026\nTime: 10:30 AM\nJudge: Hon. Demo Judge\n"),
+        mail("eservice@myflcourtaccess.com", "SERVICE OF COURT DOCUMENT",
+             "a redesigned portal template this adapter has never seen\n"),
+        mail("stranger@sketchy.example", "Invoice attached — pay today",
+             "wire transfer please", attach="invoice.pdf"),
+    ]
+    for raw in samples:
+        env = parse_message(raw, source="demo", fetched_at=st.utcnow())
+        msg_id = store.ingest(env, first_stage=pipeline.stages[0])
+        for att in store.attachments_for(msg_id):
+            label, tier = _classify(att["filename"])
+            if tier != "low":
+                store.stage_classification(att["id"], label, tier)
+        res = nmod.parse(env, adapter_stack)
+        if res is not None:
+            store.add_notice(msg_id, res.adapter, res.notice_type,
+                             res.fields, res.missing)
+        status = runner.enter(msg_id)
+        while status == st.OK:
+            status = runner.advance(msg_id)
+    store.close()
+
+    server = make_server(home / "store", pipeline, port=args.port)
+    url = f"http://127.0.0.1:{server.server_address[1]}/"
+    print(f"Demo home: {home} (disposable)")
+    print(f"Two messages passed clean; three are held — a drifted portal template,")
+    print(f"an unknown sender, and its attachment. Release them from the dashboard:")
+    print(f"  {url}   (Ctrl-C to stop)")
+    if not args.no_browser:
+        webbrowser.open(url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\ndemo stopped; nothing was saved outside", home)
+
+
+DEMO_MANIFEST = """\
+[pipeline]
+stages = ["ingest", "review"]
+
+[[gate]]
+id = "sender-scope"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+[gate.options]
+allow = ["@myflcourtaccess.com", "@uscourts.gov", "@circuit19.example"]
+
+[[gate]]
+id = "attachment-policy"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+[[gate]]
+id = "provenance-stamp"
+binds_to = ["ingest"]
+on_fail = "warn"
+authority = "paralegal"
+"""
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -504,6 +617,11 @@ def main(argv=None) -> None:
 
     sp = sub.add_parser("digest", help="print a paste-anywhere intake summary (never sends)")
     sp.set_defaults(fn=cmd_digest)
+
+    sp = sub.add_parser("demo", help="seed sample traffic and open the dashboard (no mailbox needed)")
+    sp.add_argument("--port", type=int, default=0)
+    sp.add_argument("--no-browser", action="store_true")
+    sp.set_defaults(fn=cmd_demo)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)
