@@ -186,6 +186,32 @@ def cmd_verify_draft(args) -> None:
         sys.exit(1)
 
 
+def cmd_lint(args) -> None:
+    from .extract import ExtractionError, extract_path
+    from .lint import RulepackError, lint, load_rulepack
+
+    try:
+        text = extract_path(args.file).full_text
+    except ExtractionError as e:
+        sys.exit(str(e))
+    rulepack = None
+    if args.rules:
+        try:
+            rulepack = load_rulepack(args.rules)
+        except RulepackError as e:
+            sys.exit(f"rulepack refused: {e}")
+    findings = lint(text, rulepack)
+    errors = [f for f in findings if f.severity == "error"]
+    for f in findings:
+        loc = f"line {f.line}" if f.line else "document"
+        print(f"{f.severity.upper():5} {loc:>10}  [{f.rule}] {f.message}")
+        if f.excerpt:
+            print(f"                  > {f.excerpt}")
+    print(f"\n{len(findings)} finding(s), {len(errors)} error(s)")
+    if errors:
+        sys.exit(1)
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -237,6 +263,11 @@ def main(argv=None) -> None:
     sp.add_argument("--token", help="CourtListener API token (or COURTLISTENER_TOKEN env)")
     sp.add_argument("--offline", action="store_true", help="extraction-only, no network")
     sp.set_defaults(fn=cmd_verify_draft)
+
+    sp = sub.add_parser("lint", help="deterministic writing checks for a litigation draft")
+    sp.add_argument("file", help="draft file (.docx, .pdf, .txt)")
+    sp.add_argument("--rules", help="firm rulepack (TOML)")
+    sp.set_defaults(fn=cmd_lint)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)

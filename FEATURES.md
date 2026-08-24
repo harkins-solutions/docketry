@@ -86,7 +86,7 @@ cites resolve. Reports mismatches; never asserts anything is good law.
   offline/no-token mode = extraction-only with a loud notice, exit code 2,
   never a silent pass.
 
-### F6 — Brief linter *(gate)*
+### F6 — Brief linter — SHIPPED v0.5 (CLI; gate lands with F8's draft flow)
 Deterministic writing checks for litigation drafts: credibility-language in
 summary-judgment briefing, sworn-testimony assertions lacking a record
 pin-cite on the line, internal date contradictions, citation-format lint.
