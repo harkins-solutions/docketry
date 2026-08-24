@@ -7,8 +7,8 @@ except ImportError:
     HAVE_HTTPX = False
 
 if HAVE_HTTPX:
-    from portico.cite import CiteError
-    from portico.cite_client import CourtListenerClient
+    from docketry.cite import CiteError
+    from docketry.cite_client import CourtListenerClient
 
     def client_with(handler):
         c = CourtListenerClient(token="tkn")

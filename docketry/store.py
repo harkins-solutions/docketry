@@ -97,7 +97,7 @@ class Store:
         self.root.mkdir(parents=True, exist_ok=True)
         self.attachments_dir = self.root / "attachments"
         self.attachments_dir.mkdir(exist_ok=True)
-        self.db = sqlite3.connect(self.root / "portico.db")
+        self.db = sqlite3.connect(self.root / "docketry.db")
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(attachments)")}

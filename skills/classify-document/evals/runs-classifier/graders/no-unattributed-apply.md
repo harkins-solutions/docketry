@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: "portico class-apply"
+input_match: "docketry class-apply"
 min: 0
 max: 0
 ---

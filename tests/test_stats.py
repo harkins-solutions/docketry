@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from portico import store as st
-from portico.envelope import Envelope
-from portico.manifest import load_manifest
-from portico.pipeline import Runner
-from portico.store import Store
+from docketry import store as st
+from docketry.envelope import Envelope
+from docketry.manifest import load_manifest
+from docketry.pipeline import Runner
+from docketry.store import Store
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
 
@@ -34,7 +34,7 @@ class TestStats(unittest.TestCase):
                                         "stranger@x.net"]):
                 e = env(i, sender)
                 mid = store.ingest(e, first_stage="ingest")
-                from portico import notices as nmod
+                from docketry import notices as nmod
                 res = nmod.parse(e, nmod.stack())
                 if res is not None:
                     store.add_notice(mid, res.adapter, res.notice_type,
@@ -75,7 +75,7 @@ class TestDigestNeverSends(unittest.TestCase):
         import subprocess
         out = subprocess.run(
             ["git", "grep", "-lniE", r"smtplib|sendmail|\.send_message\(|starttls",
-             "--", "portico/"],
+             "--", "docketry/"],
             capture_output=True, text=True,
         )
         self.assertEqual(out.stdout.strip(), "",

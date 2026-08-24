@@ -139,7 +139,7 @@ def parse_message(raw: bytes, *, source: str, fetched_at: str) -> Envelope:
 
     message_id = (msg.get("Message-ID") or "").strip().strip("<>")
     if not message_id:
-        message_id = f"portico-{raw_sha[:32]}"
+        message_id = f"docketry-{raw_sha[:32]}"
 
     date_iso = ""
     if msg.get("Date"):

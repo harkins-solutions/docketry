@@ -1,14 +1,14 @@
-# Portico
+# Docketry
 
 *Working name — a local, gate-enforced port that a law firm's email flows into.*
 
-Most firms work out of their email. Portico meets them there — without going
+Most firms work out of their email. Docketry meets them there — without going
 into their email. The firm creates a **dedicated intake mailbox** (for example
-`intake@yourfirm.com`), points forwarding rules at it, and Portico drains that
+`intake@yourfirm.com`), points forwarding rules at it, and Docketry drains that
 one mailbox with credentials the firm holds. Nothing enters the pipeline that
 the firm didn't send across the boundary.
 
-Portico is the **base layer** of a family of small, composable open-source
+Docketry is the **base layer** of a family of small, composable open-source
 legal workflow tools (document classification, e-service notice parsing,
 citation verification, draft linting). Each plugs into the port as a **gate**
 in a declared pipeline.
@@ -28,31 +28,31 @@ Best practices here are **code, not suggestions**:
 
 ## What it is not
 
-- **Not hosted.** Portico runs on the firm's machine. We never hold, transit,
+- **Not hosted.** Docketry runs on the firm's machine. We never hold, transit,
   or store anyone's email.
-- **Not a security product.** Portico makes no malware, phishing, or other
+- **Not a security product.** Docketry makes no malware, phishing, or other
   cybersecurity claims. Its attachment and sender gates are pipeline-hygiene
   policy — what the *pipeline* accepts — nothing more. Get real security from
   your mail provider and endpoint tooling.
-- **Not legal advice, and not a currency service.** Portico never claims any
+- **Not legal advice, and not a currency service.** Docketry never claims any
   rule, deadline, or authority is up to date. It checks the inputs you give
   it against the sources you point it at, and it fails loudly.
 
 ## Data at rest
 
-Portico stores messages and attachments in plaintext SQLite and files in
+Docketry stores messages and attachments in plaintext SQLite and files in
 its home directory, protected by file permissions (config is written 0600).
 It does NOT do application-level encryption, deliberately: an encrypted
 database whose key sits on the same disk is comfort, not protection. Protect
-a Portico home the way you protect the rest of the client file system —
+a Docketry home the way you protect the rest of the client file system —
 OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
 Nothing is ever copied off the machine.
 
 ## Try it in sixty seconds
 
 ```console
-$ pip install portico-legal
-$ portico demo
+$ pip install docketry
+$ docketry demo
 ```
 
 `demo` seeds a disposable home with sample traffic — a clean service notice,
@@ -65,16 +65,16 @@ tagged releases — double-clicking one opens this same demo.)
 ## Quickstart
 
 ```console
-$ pip install portico-legal
-$ portico init --host imap.gmail.com --user intake@yourfirm.com
-$ export PORTICO_IMAP_PASSWORD='app-password-here'
-$ portico poll        # sweep the intake mailbox once
-$ portico queue       # see anything a gate held for review
-$ portico approve 3 --gate sender-scope --by "Dana" --role paralegal
-$ portico status
+$ pip install docketry
+$ docketry init --host imap.gmail.com --user intake@yourfirm.com
+$ export DOCKETRY_IMAP_PASSWORD='app-password-here'
+$ docketry poll        # sweep the intake mailbox once
+$ docketry queue       # see anything a gate held for review
+$ docketry approve 3 --gate sender-scope --by "Dana" --role paralegal
+$ docketry status
 ```
 
-The pipeline is declared in `guardrails.toml` in your Portico home directory
+The pipeline is declared in `guardrails.toml` in your Docketry home directory
 (see `examples/guardrails.toml`). Reading the intake mailbox is strictly
 read-only: messages are never marked, moved, or deleted.
 
@@ -100,7 +100,7 @@ itself. `examples/` includes three guardrail manifests to start from
 
 Each skill ships an eval suite (`skills/<name>/evals/`) in the
 `claude plugin eval` format. The graders encode the hard rules as tests:
-`tool_used` asserts the agent actually RAN `portico verify-draft` (answering
+`tool_used` asserts the agent actually RAN `docketry verify-draft` (answering
 from model knowledge fails the eval even when the answer is right),
 `min: 0, max: 0` graders assert approvals were never executed by the agent,
 and judge graders check the honesty of degraded-mode reporting. The eval
@@ -110,7 +110,7 @@ CI and runnable wherever `claude plugin eval` is enabled.
 ## Requirements
 
 Python 3.11+. The core is stdlib-only. Feature plugins declare extras
-(`pip install "portico-legal[pdf,ocr]"` etc.) — see [FEATURES.md](FEATURES.md)
+(`pip install "docketry[pdf,ocr]"` etc.) — see [FEATURES.md](FEATURES.md)
 for the feature manifest and its dependency graph.
 
 ## License

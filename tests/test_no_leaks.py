@@ -2,7 +2,7 @@
 
 The denylist is salted-HMAC digests of identifiers private to the
 maintainer's environment; the salt lives OUTSIDE the repo (CI secret
-PORTICO_LEAK_SALT / ~/.config/portico-leak-salt), so the published list is
+DOCKETRY_LEAK_SALT / ~/.config/docketry-leak-salt), so the published list is
 not dictionary-testable. Without the salt the check reports itself skipped
 rather than passing silently.
 
@@ -49,9 +49,9 @@ _SKIP_SUFFIX = {".png", ".jpg", ".pdf", ".ico"}
 
 
 def _salt() -> str | None:
-    if os.environ.get("PORTICO_LEAK_SALT"):
-        return os.environ["PORTICO_LEAK_SALT"].strip()
-    p = Path.home() / ".config" / "portico-leak-salt"
+    if os.environ.get("DOCKETRY_LEAK_SALT"):
+        return os.environ["DOCKETRY_LEAK_SALT"].strip()
+    p = Path.home() / ".config" / "docketry-leak-salt"
     if p.exists():
         return p.read_text().strip()
     return None
@@ -61,7 +61,7 @@ class TestNoLeaks(unittest.TestCase):
     def test_tracked_files_carry_no_private_identifiers(self):
         salt = _salt()
         if not salt:
-            self.skipTest("PORTICO_LEAK_SALT not available; leak check runs in project CI")
+            self.skipTest("DOCKETRY_LEAK_SALT not available; leak check runs in project CI")
         key = salt.encode()
         files = subprocess.run(
             ["git", "ls-files"], capture_output=True, text=True, check=True

@@ -1,5 +1,5 @@
-# Firm-defined notice adapters. Drop this file in your Portico home directory
-# as adapters.toml and `portico poll` consults it before the built-ins, so a
+# Firm-defined notice adapters. Drop this file in your Docketry home directory
+# as adapters.toml and `docketry poll` consults it before the built-ins, so a
 # local template can override a shipped one.
 #
 # Each field pattern is a regular expression with exactly ONE capture group.

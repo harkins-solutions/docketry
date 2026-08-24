@@ -66,7 +66,7 @@ def _require(module: str, extra: str):
     except ImportError:
         raise ExtractionError(
             f"extracting this file type needs the '{extra}' extra:"
-            f" pip install 'portico-legal[{extra}]'"
+            f" pip install 'docketry[{extra}]'"
         ) from None
 
 

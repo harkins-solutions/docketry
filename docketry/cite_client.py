@@ -20,9 +20,9 @@ class CourtListenerClient:
         except ImportError:
             raise CiteError(
                 "network verification needs the 'cite' extra:"
-                " pip install 'portico-legal[cite]'"
+                " pip install 'docketry[cite]'"
             ) from None
-        headers = {"User-Agent": "portico-legal cite-verify"}
+        headers = {"User-Agent": "docketry cite-verify"}
         token = token or os.environ.get("COURTLISTENER_TOKEN")
         if token:
             headers["Authorization"] = f"Token {token}"

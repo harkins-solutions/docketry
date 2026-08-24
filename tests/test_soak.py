@@ -9,7 +9,7 @@ idempotent; attachment bytes round-trip; classification writes are staged
 and fill-only.
 
 Defaults are CI-sized. Scale up locally:
-  PORTICO_SOAK_ITERS=300 PORTICO_SOAK_SEEDS=1,2,3,4,5 python -m unittest tests.test_soak
+  DOCKETRY_SOAK_ITERS=300 DOCKETRY_SOAK_SEEDS=1,2,3,4,5 python -m unittest tests.test_soak
 """
 import os
 import random
@@ -18,12 +18,12 @@ import unittest
 from email.message import EmailMessage
 from pathlib import Path
 
-from portico import store as st
-from portico.classify import classify
-from portico.envelope import parse_message
-from portico.manifest import load_manifest
-from portico.pipeline import GateRefusal, Runner
-from portico.store import Store
+from docketry import store as st
+from docketry.classify import classify
+from docketry.envelope import parse_message
+from docketry.manifest import load_manifest
+from docketry.pipeline import GateRefusal, Runner
+from docketry.store import Store
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
 
@@ -84,8 +84,8 @@ def build_scenario(rng: random.Random, i: int):
 
 class TestSoak(unittest.TestCase):
     def test_soak(self):
-        iters = int(os.environ.get("PORTICO_SOAK_ITERS", "40"))
-        seeds = [int(s) for s in os.environ.get("PORTICO_SOAK_SEEDS", "1,2,3").split(",")]
+        iters = int(os.environ.get("DOCKETRY_SOAK_ITERS", "40"))
+        seeds = [int(s) for s in os.environ.get("DOCKETRY_SOAK_SEEDS", "1,2,3").split(",")]
         for seed in seeds:
             with self.subTest(seed=seed):
                 self._run(seed, iters)

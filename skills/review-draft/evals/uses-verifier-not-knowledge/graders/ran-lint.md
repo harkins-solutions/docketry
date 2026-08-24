@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: "portico lint"
+input_match: "docketry lint"
 min: 1
 ---
 

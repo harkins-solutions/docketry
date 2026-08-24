@@ -1,6 +1,6 @@
 ---
 name: intake-triage
-description: Work a Portico intake queue — sweep the intake mailbox, explain what the gates held and why, and prepare (never send) the approval commands. Invoke for "check the intake queue", "why is this message held", "sweep intake".
+description: Work a Docketry intake queue — sweep the intake mailbox, explain what the gates held and why, and prepare (never send) the approval commands. Invoke for "check the intake queue", "why is this message held", "sweep intake".
 ---
 
 # Intake triage
@@ -10,9 +10,9 @@ description: Work a Portico intake queue — sweep the intake mailbox, explain w
 1. Sweep and inspect:
 
    ```
-   portico poll
-   portico queue
-   portico notices
+   docketry poll
+   docketry queue
+   docketry notices
    ```
 
 2. For each held message, explain in plain language which gate held it and
@@ -25,7 +25,7 @@ description: Work a Portico intake queue — sweep the intake mailbox, explain w
    run — filled in except for the approver:
 
    ```
-   portico approve <id> --gate <gate> --by "<their name>" --role <role>
+   docketry approve <id> --gate <gate> --by "<their name>" --role <role>
    ```
 
 ## Hard rules

@@ -1,6 +1,6 @@
 ---
 name: classify-document
-description: Type a legal document (motion, order, notice, discovery, etc.) with Portico's deterministic classifier, or work the staged classification queue. Invoke for "what is this document", "classify these files", or "work the doc-type queue".
+description: Type a legal document (motion, order, notice, discovery, etc.) with Docketry's deterministic classifier, or work the staged classification queue. Invoke for "what is this document", "classify these files", or "work the doc-type queue".
 ---
 
 # Classify documents
@@ -11,7 +11,7 @@ from the filename yourself.
 ## Single files
 
 ```
-portico classify <file>
+docketry classify <file>
 ```
 
 Output is `label (tier)`. Tier meanings: `high` = title anchor, `medium` =
@@ -19,11 +19,11 @@ body anchor, `low` = fallback (correspondence). Report the label and tier;
 if the user disagrees with a `low` or `medium` result, that's expected —
 the deterministic tiers are conservative by design.
 
-## The staged queue (a Portico home directory)
+## The staged queue (a Docketry home directory)
 
 ```
-portico class-queue
-portico class-apply <id> --by "<person>" --role <role>
+docketry class-queue
+docketry class-apply <id> --by "<person>" --role <role>
 ```
 
 ## Hard rules

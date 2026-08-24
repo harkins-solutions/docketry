@@ -7,12 +7,12 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlencode
 
-from portico import store as st
-from portico.envelope import Attachment, Envelope
-from portico.manifest import load_manifest
-from portico.pipeline import Runner
-from portico.store import Store
-from portico.webui import make_server
+from docketry import store as st
+from docketry.envelope import Attachment, Envelope
+from docketry.manifest import load_manifest
+from docketry.pipeline import Runner
+from docketry.store import Store
+from docketry.webui import make_server
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
 

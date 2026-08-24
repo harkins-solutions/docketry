@@ -6,8 +6,8 @@ from email.message import EmailMessage
 from pathlib import Path
 from unittest import mock
 
-from portico import cli
-from portico import mailbox as mb
+from docketry import cli
+from docketry import mailbox as mb
 
 try:
     import eyecite  # noqa: F401
@@ -70,7 +70,7 @@ class TestCliFlow(unittest.TestCase):
 
     def _poll(self):
         with mock.patch.object(mb.imaplib, "IMAP4_SSL", FakeIMAP):
-            with mock.patch.dict("os.environ", {"PORTICO_IMAP_PASSWORD": "pw"}):
+            with mock.patch.dict("os.environ", {"DOCKETRY_IMAP_PASSWORD": "pw"}):
                 return run_cli("--home", self.home, "poll")
 
     def test_poll_ingests_and_parses(self):
@@ -152,11 +152,11 @@ class TestCliQol(unittest.TestCase):
 
     def _ingest_held(self):
         import json as _json
-        from portico.config import load_home
-        from portico.manifest import load_manifest
-        from portico.envelope import parse_message
-        from portico.pipeline import Runner
-        from portico.store import Store, utcnow
+        from docketry.config import load_home
+        from docketry.manifest import load_manifest
+        from docketry.envelope import parse_message
+        from docketry.pipeline import Runner
+        from docketry.store import Store, utcnow
         m = EmailMessage()
         m["From"] = "stranger@x.net"; m["To"] = "intake@f.com"; m["Subject"] = "inv"
         m.set_content("pay")
@@ -196,7 +196,7 @@ class TestCliQol(unittest.TestCase):
         code, out = run_cli("--home", self.home, "doctor")
         self.assertEqual(code, 0)
         self.assertIn("manifest: stages", out)
-        self.assertIn("PORTICO_IMAP_PASSWORD", out)
+        self.assertIn("DOCKETRY_IMAP_PASSWORD", out)
 
     def test_doctor_fails_on_missing_home(self):
         code, out = run_cli("--home", str(Path(self.tmp.name) / "ghost"), "doctor")
@@ -228,7 +228,7 @@ class TestDemo(unittest.TestCase):
         import threading
         import http.client
         from unittest import mock
-        import portico.cli as cli_mod
+        import docketry.cli as cli_mod
 
         started = {}
         real_serve = None
@@ -238,7 +238,7 @@ class TestDemo(unittest.TestCase):
             no_browser = True
 
         # capture the server instead of blocking forever
-        from portico import webui as webui_mod
+        from docketry import webui as webui_mod
         real_make = webui_mod.make_server
 
         def capture_make(store_path, pipeline, host="127.0.0.1", port=0):
@@ -247,8 +247,8 @@ class TestDemo(unittest.TestCase):
             raise KeyboardInterrupt  # unwind out of serve_forever path
 
         with mock.patch.object(cli_mod, "webbrowser") if hasattr(cli_mod, "webbrowser") else mock.patch("webbrowser.open"):
-            with mock.patch("portico.cli.make_server", capture_make, create=True):
-                with mock.patch("portico.webui.make_server", capture_make):
+            with mock.patch("docketry.cli.make_server", capture_make, create=True):
+                with mock.patch("docketry.webui.make_server", capture_make):
                     try:
                         run_cli("demo", "--no-browser")
                     except KeyboardInterrupt:

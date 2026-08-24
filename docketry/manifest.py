@@ -14,7 +14,7 @@ from . import gates as gate_registry
 from .pipeline import GateBinding, ON_FAIL, Pipeline
 
 DEFAULT_MANIFEST = """\
-# Portico guardrail manifest.
+# Docketry guardrail manifest.
 # Stages run left to right; each [[gate]] declares where it binds, what
 # happens on failure (block | bounce | warn), and which role can approve.
 

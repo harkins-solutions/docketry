@@ -1,11 +1,11 @@
 ---
 name: review-draft
-description: Review a litigation draft with Portico's citation verifier and brief linter. Invoke when the user asks to check, review, cite-check, or lint a draft, motion, brief, or response — takes a .docx, .pdf, or .txt file.
+description: Review a litigation draft with Docketry's citation verifier and brief linter. Invoke when the user asks to check, review, cite-check, or lint a draft, motion, brief, or response — takes a .docx, .pdf, or .txt file.
 ---
 
 # Review a draft
 
-Run the checks through Portico's CLI — the same validated commands the
+Run the checks through Docketry's CLI — the same validated commands the
 pipeline gates use. Never "check" a draft by reading it and reasoning about
 citations in your head; the whole point of these tools is that verification
 is a command, not an opinion.
@@ -15,8 +15,8 @@ is a command, not an opinion.
 1. Run both commands on the file the user named:
 
    ```
-   portico verify-draft <file>
-   portico lint <file> [--rules <their rulepack, if the project has one>]
+   docketry verify-draft <file>
+   docketry lint <file> [--rules <their rulepack, if the project has one>]
    ```
 
 2. Report what the tools found, grouped: citation failures first (these are

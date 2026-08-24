@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: "portico queue"
+input_match: "docketry queue"
 min: 1
 ---
 
