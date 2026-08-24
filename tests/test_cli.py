@@ -139,3 +139,85 @@ class TestCliTools(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCliQol(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = str(Path(self.tmp.name) / "home")
+        run_cli("--home", self.home, "init", "--host", "imap.x.com", "--user", "intake@f.com")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _ingest_held(self):
+        import json as _json
+        from portico.config import load_home
+        from portico.manifest import load_manifest
+        from portico.envelope import parse_message
+        from portico.pipeline import Runner
+        from portico.store import Store, utcnow
+        m = EmailMessage()
+        m["From"] = "stranger@x.net"; m["To"] = "intake@f.com"; m["Subject"] = "inv"
+        m.set_content("pay")
+        cfg = load_home(self.home)
+        # default manifest bounces strangers only if sender-scope configured;
+        # use the litigation example for a guaranteed hold
+        cfg.manifest_path.write_text(
+            Path("examples/guardrails-litigation-team.toml").read_text())
+        pipeline = load_manifest(cfg.manifest_path)
+        store = Store(cfg.store_path)
+        mid = store.ingest(parse_message(bytes(m), source="t", fetched_at=utcnow()),
+                           first_stage="ingest")
+        Runner(pipeline, store).enter(mid)
+        store.close()
+        return mid
+
+    def test_stats_text_and_json(self):
+        self._ingest_held()
+        code, out = run_cli("--home", self.home, "stats")
+        self.assertEqual(code, 0)
+        self.assertIn("holds by gate", out)
+        self.assertIn("sender-scope", out)
+        code, out = run_cli("--home", self.home, "stats", "--json")
+        import json as _json
+        data = _json.loads(out)
+        self.assertEqual(data["ingested"], 1)
+        self.assertEqual(data["holds_by_gate"].get("sender-scope"), 1)
+
+    def test_digest_lists_held(self):
+        self._ingest_held()
+        code, out = run_cli("--home", self.home, "digest")
+        self.assertEqual(code, 0)
+        self.assertIn("1 awaiting review", out)
+        self.assertIn("sender-scope", out)
+
+    def test_doctor_passes_on_fresh_home(self):
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 0)
+        self.assertIn("manifest: stages", out)
+        self.assertIn("PORTICO_IMAP_PASSWORD", out)
+
+    def test_doctor_fails_on_missing_home(self):
+        code, out = run_cli("--home", str(Path(self.tmp.name) / "ghost"), "doctor")
+        self.assertEqual(code, 1)
+
+    def test_doctor_fails_on_broken_manifest(self):
+        Path(self.home, "guardrails.toml").write_text(
+            '[pipeline]\nstages=["ingest"]\n[[gate]]\nid="no-such"\nbinds_to=["ingest"]\n')
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("manifest refused", out)
+
+    def test_approve_validates_gate_and_role(self):
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "no-such-gate", "--by", "Dana", "--role", "paralegal")
+        self.assertNotEqual(code, 0)
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Dana", "--role", "attorney")
+        self.assertNotEqual(code, 0)
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Dana", "--role", "paralegal")
+        self.assertEqual(code, 0)
+        self.assertIn("done", out)
