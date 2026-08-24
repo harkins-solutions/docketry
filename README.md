@@ -72,24 +72,6 @@ classification without a named human approver, and never releases a hold
 itself. `examples/` includes three guardrail manifests to start from
 (default, solo-strict, litigation-team).
 
-## Skills starter pack
-
-`skills/` ships three agent skills for Claude Code (or any Agent
-Skills-compatible harness): `review-draft` (runs verify-draft + lint on a
-draft), `classify-document`, and `intake-triage`. Install by copying into
-your project:
-
-```console
-$ cp -r skills/* .claude/skills/
-```
-
-The skills are a front door, not a bypass: each one drives the same CLI
-commands and gates the pipeline uses, and each carries hard rules — a skill
-never verifies a citation from model knowledge, never applies a
-classification without a named human approver, and never releases a hold
-itself. `examples/` includes three guardrail manifests to start from
-(default, solo-strict, litigation-team).
-
 ## Requirements
 
 Python 3.11+. The core is stdlib-only. Feature plugins declare extras
