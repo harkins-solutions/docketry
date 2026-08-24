@@ -72,6 +72,17 @@ classification without a named human approver, and never releases a hold
 itself. `examples/` includes three guardrail manifests to start from
 (default, solo-strict, litigation-team).
 
+## Evals
+
+Each skill ships an eval suite (`skills/<name>/evals/`) in the
+`claude plugin eval` format. The graders encode the hard rules as tests:
+`tool_used` asserts the agent actually RAN `portico verify-draft` (answering
+from model knowledge fails the eval even when the answer is right),
+`min: 0, max: 0` graders assert approvals were never executed by the agent,
+and judge graders check the honesty of degraded-mode reporting. The eval
+runner is currently in early access; the suites are validated for shape in
+CI and runnable wherever `claude plugin eval` is enabled.
+
 ## Requirements
 
 Python 3.11+. The core is stdlib-only. Feature plugins declare extras
