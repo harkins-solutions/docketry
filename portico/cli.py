@@ -174,13 +174,18 @@ def cmd_verify_draft(args) -> None:
         if not args.offline:
             print(f"network verification unavailable ({e}); extraction-only mode")
         try:
-            cites = extract_citations(text)
+            from .cite import citation_inventory
+            cites, n_short = citation_inventory(text)
         except CiteError as e2:
             sys.exit(str(e2))
-        print(f"{len(cites)} citation(s) found — NOT verified:")
+        print(f"{len(cites)} full citation(s) found — NOT verified:")
         for c in cites:
             name = f"{c.plaintiff} v. {c.defendant}".strip(" v.")
             print(f"  {name}, {c.text}" + (f" (pin p. {c.pin_page})" if c.pin_page else ""))
+        if n_short:
+            print(f"plus {n_short} short-form citation(s)"
+                  + (" — WITH NO FULL CITATION IN THIS DOCUMENT; unverifiable as written"
+                     if not cites else " riding on the fulls above"))
         sys.exit(2)
     fails = [f for f in report.findings if f.severity == "fail"]
     warns = [f for f in report.findings if f.severity == "warn"]

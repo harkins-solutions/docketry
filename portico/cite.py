@@ -61,6 +61,7 @@ class CiteFinding:
 @dataclass
 class Report:
     citations: list[Citation]
+    short_citations: int = 0
     findings: list[CiteFinding] = field(default_factory=list)
 
     @property
@@ -83,9 +84,26 @@ def _tokens(name: str) -> set[str]:
 
 def extract_citations(text: str) -> list[Citation]:
     """Full case citations via eyecite. Needs the 'cite' extra."""
+    return _extract(text)[0]
+
+
+def citation_inventory(text: str) -> tuple[list[Citation], int]:
+    """(full citations, count of short-form/supra/id citations).
+
+    Short-form cites ("329 So. 3d at 153") depend on an antecedent full cite;
+    when the fulls live outside the document (a redline, an excerpt, a brief
+    section), the shorts are UNVERIFIABLE AS WRITTEN — and that must be said
+    loudly, never reported as "0 citations found".
+    """
+    return _extract(text)
+
+
+def _extract(text: str) -> tuple[list[Citation], int]:
     try:
         import eyecite
-        from eyecite.models import FullCaseCitation
+        from eyecite.models import (
+            FullCaseCitation, IdCitation, ShortCaseCitation, SupraCitation,
+        )
     except ImportError:
         raise CiteError(
             "citation extraction needs the 'cite' extra:"
@@ -93,7 +111,11 @@ def extract_citations(text: str) -> list[Citation]:
         ) from None
 
     out: list[Citation] = []
+    n_short = 0
     for cite in eyecite.get_citations(text):
+        if isinstance(cite, (ShortCaseCitation, SupraCitation, IdCitation)):
+            n_short += 1
+            continue
         if not isinstance(cite, FullCaseCitation):
             continue
         meta = cite.metadata
@@ -110,7 +132,7 @@ def extract_citations(text: str) -> list[Citation]:
                 span=cite.span(),
             )
         )
-    return out
+    return out, n_short
 
 
 def name_matches(plaintiff: str, defendant: str, resolved_name: str) -> bool:
@@ -164,8 +186,21 @@ def verify(text: str, client) -> Report:
     `client` provides lookup(citation_text) -> Lookup and
     opinion_text(cluster_id) -> (plain_text, html_or_None).
     """
-    citations = extract_citations(text)
-    report = Report(citations=citations)
+    citations, n_short = citation_inventory(text)
+    report = Report(citations=citations, short_citations=n_short)
+    if n_short and not citations:
+        report.findings.append(CiteFinding(
+            "(short-form)", "exists", "fail",
+            f"{n_short} short-form citation(s) (e.g. '329 So. 3d at 153') with"
+            " no full citation anywhere in this document — unverifiable as"
+            " written; a filed brief must carry the full cites",
+        ))
+    elif n_short:
+        report.findings.append(CiteFinding(
+            "(short-form)", "exists", "info",
+            f"{n_short} short-form citation(s) ride on the full citations"
+            " verified above",
+        ))
     for cite in citations:
         lookup: Lookup = client.lookup(cite.text)
         if not lookup.exists:
