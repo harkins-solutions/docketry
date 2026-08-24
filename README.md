@@ -38,6 +38,16 @@ Best practices here are **code, not suggestions**:
   rule, deadline, or authority is up to date. It checks the inputs you give
   it against the sources you point it at, and it fails loudly.
 
+## Data at rest
+
+Portico stores messages and attachments in plaintext SQLite and files in
+its home directory, protected by file permissions (config is written 0600).
+It does NOT do application-level encryption, deliberately: an encrypted
+database whose key sits on the same disk is comfort, not protection. Protect
+a Portico home the way you protect the rest of the client file system —
+OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
+Nothing is ever copied off the machine.
+
 ## Quickstart
 
 ```console

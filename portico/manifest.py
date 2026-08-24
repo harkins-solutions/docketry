@@ -86,9 +86,16 @@ def build_pipeline(data: dict) -> Pipeline:
                 f"gate '{gid}' has on_fail='{on_fail}' (must be one of {ON_FAIL})"
             )
 
+        gate = cls()
+        validator = getattr(gate, "validate_options", None)
+        if validator is not None:
+            problems = validator(g.get("options", {}))
+            if problems:
+                raise ManifestError(f"gate '{gid}' options invalid: {'; '.join(problems)}")
+
         bindings.append(
             GateBinding(
-                gate=cls(),
+                gate=gate,
                 binds_to=list(binds_to),
                 on_fail=on_fail,
                 authority=g.get("authority", "attorney"),

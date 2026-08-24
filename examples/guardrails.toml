@@ -34,3 +34,16 @@ id = "notice-parser"
 binds_to = ["ingest"]
 on_fail = "bounce"          # a court notice that no longer parses is reviewed, not dropped
 authority = "paralegal"
+
+# Optional: sender deny list (checked before allow) and a name screen for
+# ethical walls / conflict screening. The terms live only in this local file.
+#
+# [[gate]]
+# id = "name-screen"
+# binds_to = ["ingest"]
+# on_fail = "block"
+# authority = "attorney"
+#
+# [gate.options]
+# note = "ethical wall"
+# terms = ["Walled Party LLC", "Confidential Matter Name"]
