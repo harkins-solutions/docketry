@@ -1,0 +1,32 @@
+# Solo practitioner, strict posture: everything a gate can hold, it holds.
+# Loosen deliberately; the safest manifest is the one you start from.
+
+[pipeline]
+stages = ["ingest", "review"]
+
+[[gate]]
+id = "sender-scope"
+binds_to = ["ingest"]
+on_fail = "block"           # unknown senders stop hard until you look
+authority = "attorney"
+
+[gate.options]
+allow = ["@myflcourtaccess.com"]
+
+[[gate]]
+id = "attachment-policy"
+binds_to = ["ingest"]
+on_fail = "block"
+authority = "attorney"
+
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "block"           # a notice that stops parsing is a missed-service risk
+authority = "attorney"
+
+[[gate]]
+id = "provenance-stamp"
+binds_to = ["ingest"]
+on_fail = "warn"
+authority = "attorney"
