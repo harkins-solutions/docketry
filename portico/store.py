@@ -276,6 +276,53 @@ class Store:
             "SELECT * FROM attachments WHERE message_id=? ORDER BY id", (msg_id,)
         ).fetchall()
 
+    # -- stats: queue health, not people scores --------------------------
+    def stats(self, days: int = 7) -> dict:
+        cutoff = f"-{days} days"
+        q = self.db.execute
+        ingested = q(
+            "SELECT COUNT(*) n FROM messages WHERE fetched_at >= datetime('now', ?)",
+            (cutoff,),
+        ).fetchone()["n"]
+        by_status = {r["status"]: r["n"] for r in q(
+            "SELECT status, COUNT(*) n FROM messages"
+            " WHERE fetched_at >= datetime('now', ?) GROUP BY status", (cutoff,))}
+        holds_by_gate = {r["gate_id"]: r["n"] for r in q(
+            "SELECT gate_id, COUNT(DISTINCT message_id) n FROM findings"
+            " WHERE severity='fail' AND created_at >= datetime('now', ?)"
+            " GROUP BY gate_id ORDER BY n DESC", (cutoff,))}
+        notices_by_type = {r["notice_type"]: r["n"] for r in q(
+            "SELECT notice_type, COUNT(*) n FROM notices"
+            " WHERE created_at >= datetime('now', ?) GROUP BY notice_type", (cutoff,))}
+        drift = q(
+            "SELECT COUNT(DISTINCT message_id) n FROM findings"
+            " WHERE gate_id='notice-parser' AND severity='fail'"
+            " AND created_at >= datetime('now', ?)", (cutoff,),
+        ).fetchone()["n"]
+        release = q(
+            "SELECT AVG((julianday(a.created_at) - julianday(m.fetched_at)) * 24) h"
+            " FROM approvals a JOIN messages m ON m.id = a.message_id"
+            " WHERE a.created_at >= datetime('now', ?)", (cutoff,),
+        ).fetchone()["h"]
+        approvals_by_role = {r["role"]: r["n"] for r in q(
+            "SELECT role, COUNT(*) n FROM approvals"
+            " WHERE created_at >= datetime('now', ?) GROUP BY role", (cutoff,))}
+        classifications = {r["k"]: r["n"] for r in q(
+            "SELECT CASE WHEN applied=0 THEN 'open' ELSE 'applied' END k, COUNT(*) n"
+            " FROM classifications WHERE created_at >= datetime('now', ?)"
+            " GROUP BY k", (cutoff,))}
+        return {
+            "days": days,
+            "ingested": ingested,
+            "by_status": by_status,
+            "holds_by_gate": holds_by_gate,
+            "notices_by_type": notices_by_type,
+            "template_drift_messages": drift,
+            "avg_hours_to_release": round(release, 1) if release is not None else None,
+            "approvals_by_role": approvals_by_role,
+            "classifications": classifications,
+        }
+
     # -- imap cursor -----------------------------------------------------
     def imap_cursor(self, mailbox: str) -> tuple[int | None, int]:
         row = self.db.execute(

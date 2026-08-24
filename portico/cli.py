@@ -367,6 +367,55 @@ def cmd_doctor(args) -> None:
     sys.exit(0 if ok else 1)
 
 
+def cmd_stats(args) -> None:
+    _, _, store = _open(args.home)
+    s = store.stats(days=args.days)
+    if args.json:
+        print(json.dumps(s, indent=2))
+        return
+    print(f"last {s['days']} day(s): {s['ingested']} message(s) ingested")
+    for k, v in sorted(s["by_status"].items()):
+        print(f"  {k:15} {v}")
+    if s["holds_by_gate"]:
+        print("holds by gate:")
+        for g, n in s["holds_by_gate"].items():
+            print(f"  {g:20} {n}")
+    if s["notices_by_type"]:
+        print("court notices:")
+        for t, n in sorted(s["notices_by_type"].items()):
+            print(f"  {t:20} {n}")
+    if s["template_drift_messages"]:
+        print(f"TEMPLATE DRIFT: {s['template_drift_messages']} message(s) — a court"
+              " system may have changed its email format")
+    if s["avg_hours_to_release"] is not None:
+        print(f"avg hours held before release: {s['avg_hours_to_release']}")
+    if s["approvals_by_role"]:
+        print("approvals recorded (audit): "
+              + ", ".join(f"{r}={n}" for r, n in sorted(s["approvals_by_role"].items())))
+    if s["classifications"]:
+        print("doc-type proposals: "
+              + ", ".join(f"{k}={n}" for k, n in sorted(s["classifications"].items())))
+
+
+def cmd_digest(args) -> None:
+    """Prints a paste-anywhere summary. Portico never sends anything."""
+    _, _, store = _open(args.home)
+    s = store.stats(days=1)
+    held = store.list_by_status("pending_review") + store.list_by_status("blocked")
+    lines = [f"Portico intake digest — {len(held)} awaiting review,"
+             f" {s['ingested']} ingested in the last day"]
+    for row in held[:15]:
+        env = json.loads(row["envelope_json"])
+        gates = sorted({f["gate_id"] for f in store.findings_for(row["id"])
+                        if f["severity"] == "fail"})
+        lines.append(f"  [{row['id']}] {env['subject']!r} from {env['from_addr']}"
+                     f" — held by {', '.join(gates) or 'unknown'}")
+    if s["template_drift_messages"]:
+        lines.append(f"  NOTE: {s['template_drift_messages']} template-drift event(s)"
+                     " — check portal formats")
+    print("\n".join(lines))
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -447,6 +496,14 @@ def main(argv=None) -> None:
 
     sp = sub.add_parser("doctor", help="check the installation and say what is missing")
     sp.set_defaults(fn=cmd_doctor)
+
+    sp = sub.add_parser("stats", help="queue-health stats (volumes, holds, drift, latency)")
+    sp.add_argument("--days", type=int, default=7)
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(fn=cmd_stats)
+
+    sp = sub.add_parser("digest", help="print a paste-anywhere intake summary (never sends)")
+    sp.set_defaults(fn=cmd_digest)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)
