@@ -2,6 +2,17 @@
 from __future__ import annotations
 
 import argparse
+import os as _os
+
+def _color(code: str, s: str) -> str:
+    if not sys.stdout.isatty() or _os.environ.get("NO_COLOR"):
+        return s
+    return f"\033[{code}m{s}\033[0m"
+
+def _sev(marker: str) -> str:
+    return {"FAIL": _color("31;1", "FAIL"), "ERROR": _color("31;1", "ERROR"),
+            "warn": _color("33", "warn"), "WARN": _color("33", "WARN"),
+            "  ok": _color("32", "  ok")}.get(marker, marker)
 import getpass
 import json
 import sys
@@ -198,7 +209,7 @@ def cmd_verify_draft(args) -> None:
     fails = [f for f in report.findings if f.severity == "fail"]
     warns = [f for f in report.findings if f.severity == "warn"]
     for f in report.findings:
-        marker = {"fail": "FAIL", "warn": "warn", "info": "  ok"}[f.severity]
+        marker = _sev({"fail": "FAIL", "warn": "warn", "info": "  ok"}[f.severity])
         print(f"{marker}  [{f.check}] {f.summary}")
     print(f"\n{len(report.citations)} citation(s): {len(fails)} failed,"
           f" {len(warns)} warning(s)")
@@ -224,7 +235,7 @@ def cmd_lint(args) -> None:
     errors = [f for f in findings if f.severity == "error"]
     for f in findings:
         loc = f"line {f.line}" if f.line else "document"
-        print(f"{f.severity.upper():5} {loc:>10}  [{f.rule}] {f.message}")
+        print(f"{_sev(f.severity.upper()):5} {loc:>10}  [{f.rule}] {f.message}")
         if f.excerpt:
             print(f"                  > {f.excerpt}")
     print(f"\n{len(findings)} finding(s), {len(errors)} error(s)")
@@ -260,6 +271,100 @@ def cmd_class_apply(args) -> None:
     _, _, store = _open(args.home)
     outcome = store.apply_classification(args.id, by=args.by, role=args.role)
     print(outcome)
+
+
+def cmd_ui(args) -> None:
+    from .webui import make_server
+    cfg, pipeline, store = _open(args.home)
+    store.close()
+    server = make_server(cfg.store_path, pipeline, port=args.port)
+    print(f"Portico review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopped")
+
+
+def cmd_watch(args) -> None:
+    import time
+    print(f"sweeping every {args.every}s (Ctrl-C to stop)")
+    while True:
+        try:
+            cmd_poll(args)
+        except SystemExit as e:
+            raise
+        except Exception as e:
+            print(f"sweep failed: {e} — retrying in {args.every}s")
+        try:
+            time.sleep(args.every)
+        except KeyboardInterrupt:
+            print("\nstopped")
+            return
+
+
+def cmd_doctor(args) -> None:
+    import shutil
+    from .config import load_home
+    from .manifest import ManifestError, load_manifest as _lm
+
+    ok = True
+
+    def report(level, msg):
+        nonlocal ok
+        if level == "FAIL":
+            ok = False
+        print(f"{_sev(level if level != 'PASS' else '  ok'):5} {msg}")
+
+    home = Path(args.home)
+    if not home.exists():
+        report("FAIL", f"home {home} does not exist — run: portico init")
+        sys.exit(1)
+    report("PASS", f"home: {home}")
+    cfg = load_home(home)
+    if cfg.mailbox is None:
+        report("WARN", "no [mailbox] configured (init with --host/--user to poll)")
+    else:
+        report("PASS", f"mailbox: {cfg.mailbox.user} @ {cfg.mailbox.host} ({cfg.mailbox.folder})")
+        if not cfg.mailbox.password:
+            report("WARN", "no mailbox password: set PORTICO_IMAP_PASSWORD")
+    if cfg.manifest_path.exists():
+        try:
+            pipeline = _lm(cfg.manifest_path)
+            report("PASS", f"manifest: stages {pipeline.stages}, "
+                           f"{len(pipeline.bindings)} gate binding(s)")
+        except ManifestError as e:
+            report("FAIL", f"manifest refused: {e}")
+    else:
+        report("FAIL", f"no {cfg.manifest_path.name} — run: portico init")
+    adapters = home / "adapters.toml"
+    if adapters.exists():
+        from .notices import AdapterError, load_adapters_file
+        try:
+            n = len(load_adapters_file(adapters))
+            report("PASS", f"firm adapters: {n} loaded")
+        except AdapterError as e:
+            report("FAIL", f"adapters.toml refused: {e}")
+    else:
+        report("PASS", "no firm adapters.toml (built-ins only)")
+    for mod, extra, what in (("pypdf", "pdf", "PDF extraction"),
+                             ("docx", "docx", "DOCX extraction"),
+                             ("eyecite", "cite", "citation extraction"),
+                             ("httpx", "cite", "citation verification")):
+        try:
+            __import__(mod)
+            report("PASS", f"{what} available")
+        except ImportError:
+            report("WARN", f"{what} missing — pip install 'portico-legal[{extra}]'")
+    for binary, pkg in (("tesseract", "tesseract-ocr"), ("pdftoppm", "poppler-utils")):
+        if shutil.which(binary):
+            report("PASS", f"{binary} present (OCR possible)")
+        else:
+            report("WARN", f"{binary} missing — scanned PDFs need {pkg}")
+    if _os.environ.get("COURTLISTENER_TOKEN"):
+        report("PASS", "COURTLISTENER_TOKEN set (live citation verification)")
+    else:
+        report("WARN", "COURTLISTENER_TOKEN not set — verify-draft runs extraction-only")
+    sys.exit(0 if ok else 1)
 
 
 def cmd_status(args) -> None:
@@ -331,6 +436,17 @@ def main(argv=None) -> None:
     sp.add_argument("--by", required=True)
     sp.add_argument("--role", required=True)
     sp.set_defaults(fn=cmd_class_apply)
+
+    sp = sub.add_parser("ui", help="local review dashboard (127.0.0.1 only)")
+    sp.add_argument("--port", type=int, default=8642)
+    sp.set_defaults(fn=cmd_ui)
+
+    sp = sub.add_parser("watch", help="sweep the intake mailbox on a loop")
+    sp.add_argument("--every", type=int, default=300, help="seconds between sweeps")
+    sp.set_defaults(fn=cmd_watch)
+
+    sp = sub.add_parser("doctor", help="check the installation and say what is missing")
+    sp.set_defaults(fn=cmd_doctor)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)
