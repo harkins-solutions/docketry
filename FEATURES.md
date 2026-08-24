@@ -107,7 +107,7 @@ Same store, same endpoints-of-record — never a parallel path around the gates.
 - External: none planned (stdlib `http.server` tier) — revisit only if real
   usage demands more.
 
-### F9 — Skills starter pack
+### F9 — Skills starter pack — SHIPPED v0.7
 Light agent skills wrapping the tools: review-my-draft (F5+F6),
 classify-this (F4), plus 2–3 example manifests. Skills call the same gates as
 the pipeline — never a prompt-only parallel path.
