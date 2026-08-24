@@ -53,11 +53,16 @@ fallback for scans; DOCX text.
   everything downstream, so the extractor must report per-page confidence and
   fail loudly rather than emit garbage silently.
 
-### F3 — E-service notice parser *(gate)*
-Recognizes e-filing/e-service notification emails (Florida ePortal, Odyssey
-formats first), extracts served parties, document titles, case number
-strings. Format parsing only — breaks loudly when a portal changes its
-template.
+### F3 — Court-notice parser *(gate)* — SHIPPED v0.2
+Source-adapter registry over court notification emails: built-in adapters for
+the Florida ePortal (service), PACER/CM-ECF NEFs (federal service; the
+one-time "free look" link is captured as data, never fetched), JACS and JAWS
+hearing notices, and Tyler e-filing receipts — plus firm-defined adapters as
+TOML config (`adapters.toml`, consulted before built-ins) so any local
+court's format can be added or overridden without code. Common schema across
+a three-type taxonomy: service_notice / filing_receipt / hearing_notice.
+Format parsing only; a matched notice missing a required field bounces to the
+review queue — template drift fails loudly, never silently.
 - Internal: F0 (envelope). Does **not** need F2 (works on the email body).
 - External: none.
 

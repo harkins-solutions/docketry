@@ -25,4 +25,4 @@ def all_ids() -> list[str]:
 
 
 # Built-ins register on import.
-from . import builtin  # noqa: E402,F401
+from . import builtin, notice  # noqa: E402,F401
