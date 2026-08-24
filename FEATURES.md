@@ -100,7 +100,7 @@ Turns accepted lint/edit findings into native Word tracked changes.
   heaviest external dependency in the family; isolate behind an interface so
   it can be swapped).
 
-### F8 — Review queue UI
+### F8 — Review queue UI — SHIPPED v0.8
 A small local web view of the queue/approve flow the CLI already provides.
 Same store, same endpoints-of-record — never a parallel path around the gates.
 - Internal: F1.
