@@ -116,6 +116,14 @@ def cmd_approve(args) -> None:
     row = store.get_message(args.message)
     if row is None:
         sys.exit(f"no message {args.message}")
+    stage_bindings = {b.gate.id: b for b in pipeline.bindings_for(row["stage"])}
+    binding = stage_bindings.get(args.gate)
+    if binding is None:
+        sys.exit(f"gate '{args.gate}' is not bound at stage '{row['stage']}'"
+                 f" (bound here: {', '.join(sorted(stage_bindings)) or 'none'})")
+    if args.role != binding.authority:
+        sys.exit(f"gate '{args.gate}' at stage '{row['stage']}' requires role"
+                 f" '{binding.authority}', not '{args.role}' — approval not recorded")
     store.add_approval(
         args.message, row["stage"], args.gate,
         approved_by=args.by, role=args.role, note=args.note or "",
