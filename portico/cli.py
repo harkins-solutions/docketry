@@ -13,6 +13,7 @@ from .config import MANIFEST_NAME, load_home, write_config
 from .envelope import parse_message
 from .mailbox import IntakeMailbox
 from .manifest import DEFAULT_MANIFEST, load_manifest
+from . import notices as notices_mod
 from .pipeline import GateRefusal, Runner
 from .store import Store
 
@@ -54,7 +55,9 @@ def cmd_poll(args) -> None:
         sys.exit("no mailbox password (set PORTICO_IMAP_PASSWORD)")
     runner = Runner(pipeline, store)
     first_stage = pipeline.stages[0]
-    ingested = held = 0
+    adapters_file = cfg.home / "adapters.toml"
+    adapter_stack = notices_mod.stack(adapters_file if adapters_file.exists() else None)
+    ingested = held = parsed = 0
     with IntakeMailbox(cfg.mailbox) as mb:
         uidvalidity, last_uid = store.imap_cursor(mb.label)
         current_validity = mb.uidvalidity()
@@ -69,11 +72,16 @@ def cmd_poll(args) -> None:
             if msg_id is None:
                 continue
             ingested += 1
+            result = notices_mod.parse(env, adapter_stack)
+            if result is not None:
+                store.add_notice(msg_id, result.adapter, result.notice_type,
+                                 result.fields, result.missing)
+                parsed += 1
             status = runner.enter(msg_id)
             if status in (st.PENDING_REVIEW, st.BLOCKED):
                 held += 1
         store.set_imap_cursor(mb.label, current_validity, max_uid)
-    print(f"ingested {ingested} new message(s); {held} held for review")
+    print(f"ingested {ingested} new message(s); {parsed} parsed as court notices; {held} held for review")
     if held:
         print("run: portico queue")
 
@@ -123,6 +131,23 @@ def cmd_advance(args) -> None:
         sys.exit(str(e))
 
 
+def cmd_notices(args) -> None:
+    _, _, store = _open(args.home)
+    rows = store.list_notices(args.type)
+    if not rows:
+        print("no notices parsed yet")
+        return
+    for r in rows:
+        fields = json.loads(r["fields_json"])
+        missing = json.loads(r["missing_json"])
+        line = f"[msg {r['message_id']}] {r['notice_type']} via {r['adapter']}: " + ", ".join(
+            f"{k}={v}" for k, v in fields.items()
+        )
+        if missing:
+            line += f"  MISSING: {', '.join(missing)}"
+        print(line)
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -164,6 +189,10 @@ def main(argv=None) -> None:
     sp = sub.add_parser("advance", help="move a message one stage forward")
     sp.add_argument("message", type=int)
     sp.set_defaults(fn=cmd_advance)
+
+    sp = sub.add_parser("notices", help="list parsed court notices")
+    sp.add_argument("--type", choices=["service_notice", "filing_receipt", "hearing_notice"])
+    sp.set_defaults(fn=cmd_notices)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)

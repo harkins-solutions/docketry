@@ -53,6 +53,15 @@ CREATE TABLE IF NOT EXISTS approvals(
   note TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS notices(
+  id INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES messages(id),
+  adapter TEXT NOT NULL,
+  notice_type TEXT NOT NULL,
+  fields_json TEXT NOT NULL,
+  missing_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS imap_state(
   mailbox TEXT PRIMARY KEY,
   uidvalidity INTEGER,
@@ -176,6 +185,25 @@ class Store:
             "SELECT status, COUNT(*) n FROM messages GROUP BY status"
         ).fetchall()
         return {r["status"]: r["n"] for r in rows}
+
+    # -- notices ---------------------------------------------------------
+    def add_notice(self, msg_id: int, adapter: str, notice_type: str,
+                   fields: dict, missing: list[str]) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT INTO notices(message_id, adapter, notice_type,"
+                " fields_json, missing_json, created_at) VALUES(?,?,?,?,?,?)",
+                (msg_id, adapter, notice_type, json.dumps(fields),
+                 json.dumps(missing), utcnow()),
+            )
+
+    def list_notices(self, notice_type: str | None = None) -> list[sqlite3.Row]:
+        if notice_type:
+            return self.db.execute(
+                "SELECT * FROM notices WHERE notice_type=? ORDER BY id",
+                (notice_type,),
+            ).fetchall()
+        return self.db.execute("SELECT * FROM notices ORDER BY id").fetchall()
 
     # -- imap cursor -----------------------------------------------------
     def imap_cursor(self, mailbox: str) -> tuple[int | None, int]:
