@@ -62,6 +62,17 @@ CREATE TABLE IF NOT EXISTS notices(
   missing_json TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS classifications(
+  id INTEGER PRIMARY KEY,
+  attachment_id INTEGER NOT NULL REFERENCES attachments(id),
+  label TEXT NOT NULL,
+  tier TEXT NOT NULL,
+  applied INTEGER NOT NULL DEFAULT 0,
+  applied_by TEXT,
+  applied_role TEXT,
+  applied_at TEXT,
+  created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS imap_state(
   mailbox TEXT PRIMARY KEY,
   uidvalidity INTEGER,
@@ -89,6 +100,10 @@ class Store:
         self.db = sqlite3.connect(self.root / "portico.db")
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(attachments)")}
+        if "doc_type" not in cols:
+            with self.db:
+                self.db.execute("ALTER TABLE attachments ADD COLUMN doc_type TEXT")
 
     def close(self) -> None:
         self.db.close()
@@ -204,6 +219,62 @@ class Store:
                 (notice_type,),
             ).fetchall()
         return self.db.execute("SELECT * FROM notices ORDER BY id").fetchall()
+
+    # -- classifications (stage-for-approval, fill-only) -----------------
+    def stage_classification(self, attachment_id: int, label: str, tier: str) -> int | None:
+        """Stage a proposed doc type; skip if an open proposal already exists."""
+        row = self.db.execute(
+            "SELECT id FROM classifications WHERE attachment_id=? AND applied=0",
+            (attachment_id,),
+        ).fetchone()
+        if row:
+            return None
+        with self.db:
+            cur = self.db.execute(
+                "INSERT INTO classifications(attachment_id, label, tier, created_at)"
+                " VALUES(?,?,?,?)",
+                (attachment_id, label, tier, utcnow()),
+            )
+        return cur.lastrowid
+
+    def open_classifications(self) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT c.*, a.filename, a.doc_type FROM classifications c"
+            " JOIN attachments a ON a.id = c.attachment_id"
+            " WHERE c.applied=0 ORDER BY c.id"
+        ).fetchall()
+
+    def apply_classification(self, class_id: int, *, by: str, role: str) -> str:
+        """Fill-only: sets attachments.doc_type only when it is NULL."""
+        row = self.db.execute(
+            "SELECT c.*, a.doc_type FROM classifications c"
+            " JOIN attachments a ON a.id = c.attachment_id WHERE c.id=?",
+            (class_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"no classification {class_id}")
+        if row["applied"]:
+            return "already-applied"
+        with self.db:
+            if row["doc_type"] is None:
+                self.db.execute(
+                    "UPDATE attachments SET doc_type=? WHERE id=?",
+                    (row["label"], row["attachment_id"]),
+                )
+                outcome = "applied"
+            else:
+                outcome = f"kept-existing:{row['doc_type']}"
+            self.db.execute(
+                "UPDATE classifications SET applied=1, applied_by=?, applied_role=?,"
+                " applied_at=? WHERE id=?",
+                (by, role, utcnow(), class_id),
+            )
+        return outcome
+
+    def attachments_for(self, msg_id: int) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT * FROM attachments WHERE message_id=? ORDER BY id", (msg_id,)
+        ).fetchall()
 
     # -- imap cursor -----------------------------------------------------
     def imap_cursor(self, mailbox: str) -> tuple[int | None, int]:
