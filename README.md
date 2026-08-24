@@ -51,7 +51,7 @@ Nothing is ever copied off the machine.
 ## Try it in sixty seconds
 
 ```console
-$ pip install docketry
+$ pip install docketry   # or grab a one-file executable from Releases
 $ docketry demo
 ```
 
