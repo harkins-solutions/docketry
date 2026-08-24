@@ -44,7 +44,7 @@ load-time validation incl. allowed-stages scoping.
 - Internal: F0 (envelope, store).
 - External: none (stdlib `tomllib`).
 
-### F2 — Text extraction layer
+### F2 — Text extraction layer — SHIPPED v0.3
 One interface: attachment in, text + page map out. PDF text natively; OCR
 fallback for scans; DOCX text.
 - Internal: F0 (attachment store).
@@ -74,15 +74,17 @@ stage-for-approval, fill-only.
 - External: none for the deterministic tier. An optional LLM tier would add a
   model API dependency — off by default, bring-your-own key, never required.
 
-### F5 — Citation verifier *(gate)*
+### F5 — Citation verifier — SHIPPED v0.4 (CLI; gate lands with F8's draft flow)
 The "lint for briefs" existence+name+quote+pin check: extracts citations from
 a draft, verifies against CourtListener that the case exists, the case name
 matches the reporter cite, quoted language appears in the opinion, and pin
 cites resolve. Reports mismatches; never asserts anything is good law.
 - Internal: F2 (draft text from DOCX/PDF).
 - External: `eyecite` (+ its `reporters-db`/`courts-db` data), `httpx`;
-  network access to the CourtListener API (user's own token; degraded offline
-  mode = extraction-only).
+  network access to the CourtListener API — which now requires a (free)
+  account token for citation-lookup, via COURTLISTENER_TOKEN. Degraded
+  offline/no-token mode = extraction-only with a loud notice, exit code 2,
+  never a silent pass.
 
 ### F6 — Brief linter *(gate)*
 Deterministic writing checks for litigation drafts: credibility-language in

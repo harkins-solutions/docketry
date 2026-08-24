@@ -148,6 +148,44 @@ def cmd_notices(args) -> None:
         print(line)
 
 
+def cmd_verify_draft(args) -> None:
+    from .cite import CiteError, verify, extract_citations
+    from .extract import ExtractionError, extract_path
+
+    try:
+        text = extract_path(args.file).full_text
+    except ExtractionError as e:
+        sys.exit(str(e))
+    try:
+        if args.offline:
+            raise CiteError("offline requested")
+        from .cite_client import CourtListenerClient
+        client = CourtListenerClient(token=args.token)
+        report = verify(text, client)
+        client.close()
+    except CiteError as e:
+        if not args.offline:
+            print(f"network verification unavailable ({e}); extraction-only mode")
+        try:
+            cites = extract_citations(text)
+        except CiteError as e2:
+            sys.exit(str(e2))
+        print(f"{len(cites)} citation(s) found — NOT verified:")
+        for c in cites:
+            name = f"{c.plaintiff} v. {c.defendant}".strip(" v.")
+            print(f"  {name}, {c.text}" + (f" (pin p. {c.pin_page})" if c.pin_page else ""))
+        sys.exit(2)
+    fails = [f for f in report.findings if f.severity == "fail"]
+    warns = [f for f in report.findings if f.severity == "warn"]
+    for f in report.findings:
+        marker = {"fail": "FAIL", "warn": "warn", "info": "  ok"}[f.severity]
+        print(f"{marker}  [{f.check}] {f.summary}")
+    print(f"\n{len(report.citations)} citation(s): {len(fails)} failed,"
+          f" {len(warns)} warning(s)")
+    if fails:
+        sys.exit(1)
+
+
 def cmd_status(args) -> None:
     _, _, store = _open(args.home)
     counts = store.counts()
@@ -193,6 +231,12 @@ def main(argv=None) -> None:
     sp = sub.add_parser("notices", help="list parsed court notices")
     sp.add_argument("--type", choices=["service_notice", "filing_receipt", "hearing_notice"])
     sp.set_defaults(fn=cmd_notices)
+
+    sp = sub.add_parser("verify-draft", help="verify every citation in a draft (exists/name/quote/pin)")
+    sp.add_argument("file", help="draft file (.docx, .pdf, .txt)")
+    sp.add_argument("--token", help="CourtListener API token (or COURTLISTENER_TOKEN env)")
+    sp.add_argument("--offline", action="store_true", help="extraction-only, no network")
+    sp.set_defaults(fn=cmd_verify_draft)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)
