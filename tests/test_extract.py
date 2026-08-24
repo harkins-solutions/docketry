@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from portico.extract import Extraction, ExtractionError, Page, extract_path
+from docketry.extract import Extraction, ExtractionError, Page, extract_path
 
 try:
     import pypdf

@@ -1,11 +1,11 @@
-"""PyInstaller entry point: `portico` as a double-clickable executable.
+"""PyInstaller entry point: `docketry` as a double-clickable executable.
 
 Run with no arguments (a double-click) it opens the demo dashboard;
-with arguments it is exactly the portico CLI.
+with arguments it is exactly the docketry CLI.
 """
 import sys
 
-from portico.cli import main
+from docketry.cli import main
 
 if __name__ == "__main__":
     if len(sys.argv) == 1:

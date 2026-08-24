@@ -2,9 +2,9 @@
 import unittest
 from pathlib import Path
 
-from portico.lint import load_rulepack
-from portico.manifest import load_manifest
-from portico.notices import load_adapters_file
+from docketry.lint import load_rulepack
+from docketry.manifest import load_manifest
+from docketry.notices import load_adapters_file
 
 EXAMPLES = Path("examples")
 SKILLS = Path("skills")
@@ -52,4 +52,4 @@ class TestSkills(unittest.TestCase):
             self.assertTrue(text.startswith("---\n"), f"{f}: missing frontmatter")
             self.assertIn("name:", text)
             self.assertIn("description:", text)
-            self.assertIn("portico ", text, f"{f}: a skill must call the real CLI")
+            self.assertIn("docketry ", text, f"{f}: a skill must call the real CLI")

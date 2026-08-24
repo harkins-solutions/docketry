@@ -1,7 +1,7 @@
 ---
 type: tool_used
 tool: Bash
-input_match: "portico verify-draft"
+input_match: "docketry verify-draft"
 min: 1
 ---
 

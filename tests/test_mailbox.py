@@ -2,7 +2,7 @@ import unittest
 from email.message import EmailMessage
 from unittest import mock
 
-from portico import mailbox as mb
+from docketry import mailbox as mb
 
 
 def raw_msg(subject):

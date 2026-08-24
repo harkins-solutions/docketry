@@ -1,9 +1,9 @@
-"""Home-directory config for a Portico installation.
+"""Home-directory config for a Docketry installation.
 
-A Portico "home" is one directory holding config.toml, the guardrail
+A Docketry "home" is one directory holding config.toml, the guardrail
 manifest, the SQLite store, and attachments — the whole installation is one
 folder on the firm's own disk. The IMAP password is read from the
-PORTICO_IMAP_PASSWORD environment variable first; storing it in config.toml
+DOCKETRY_IMAP_PASSWORD environment variable first; storing it in config.toml
 is supported for single-machine setups (the file is chmod 0600 on write).
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ def load_home(home: str | Path) -> HomeConfig:
     if cfg_path.exists():
         data = tomllib.loads(cfg_path.read_text())
         mb = data.get("mailbox", {})
-        password = os.environ.get("PORTICO_IMAP_PASSWORD") or mb.get("password", "")
+        password = os.environ.get("DOCKETRY_IMAP_PASSWORD") or mb.get("password", "")
         if mb.get("host") and mb.get("user"):
             mailbox = MailboxConfig(
                 host=mb["host"],

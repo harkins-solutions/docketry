@@ -1,4 +1,4 @@
-"""Portico CLI: init, poll, queue, approve, advance, status."""
+"""Docketry CLI: init, poll, queue, approve, advance, status."""
 from __future__ import annotations
 
 import argparse
@@ -32,7 +32,7 @@ from .store import Store
 def _open(home: str):
     cfg = load_home(home)
     if not cfg.manifest_path.exists():
-        sys.exit(f"no {MANIFEST_NAME} in {home} — run: portico init")
+        sys.exit(f"no {MANIFEST_NAME} in {home} — run: docketry init")
     pipeline = load_manifest(cfg.manifest_path)
     return cfg, pipeline, Store(cfg.store_path)
 
@@ -54,16 +54,16 @@ def cmd_init(args) -> None:
     print(f"  config:    {home / 'config.toml'}")
     print(f"  manifest:  {manifest}")
     if not password:
-        print("  password:  set PORTICO_IMAP_PASSWORD in the environment")
-    print("next: point a forwarding rule at the intake mailbox, then run: portico poll")
+        print("  password:  set DOCKETRY_IMAP_PASSWORD in the environment")
+    print("next: point a forwarding rule at the intake mailbox, then run: docketry poll")
 
 
 def cmd_poll(args) -> None:
     cfg, pipeline, store = _open(args.home)
     if cfg.mailbox is None:
-        sys.exit("no [mailbox] configured — run: portico init")
+        sys.exit("no [mailbox] configured — run: docketry init")
     if not cfg.mailbox.password:
-        sys.exit("no mailbox password (set PORTICO_IMAP_PASSWORD)")
+        sys.exit("no mailbox password (set DOCKETRY_IMAP_PASSWORD)")
     runner = Runner(pipeline, store)
     first_stage = pipeline.stages[0]
     adapters_file = cfg.home / "adapters.toml"
@@ -101,7 +101,7 @@ def cmd_poll(args) -> None:
         store.set_imap_cursor(mb.label, current_validity, max_uid)
     print(f"ingested {ingested} new message(s); {parsed} parsed as court notices; {held} held for review")
     if held:
-        print("run: portico queue")
+        print("run: docketry queue")
 
 
 def _print_row(store: Store, row) -> None:
@@ -278,7 +278,7 @@ def cmd_ui(args) -> None:
     cfg, pipeline, store = _open(args.home)
     store.close()
     server = make_server(cfg.store_path, pipeline, port=args.port)
-    print(f"Portico review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
+    print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
@@ -317,7 +317,7 @@ def cmd_doctor(args) -> None:
 
     home = Path(args.home)
     if not home.exists():
-        report("FAIL", f"home {home} does not exist — run: portico init")
+        report("FAIL", f"home {home} does not exist — run: docketry init")
         sys.exit(1)
     report("PASS", f"home: {home}")
     cfg = load_home(home)
@@ -326,7 +326,7 @@ def cmd_doctor(args) -> None:
     else:
         report("PASS", f"mailbox: {cfg.mailbox.user} @ {cfg.mailbox.host} ({cfg.mailbox.folder})")
         if not cfg.mailbox.password:
-            report("WARN", "no mailbox password: set PORTICO_IMAP_PASSWORD")
+            report("WARN", "no mailbox password: set DOCKETRY_IMAP_PASSWORD")
     if cfg.manifest_path.exists():
         try:
             pipeline = _lm(cfg.manifest_path)
@@ -335,7 +335,7 @@ def cmd_doctor(args) -> None:
         except ManifestError as e:
             report("FAIL", f"manifest refused: {e}")
     else:
-        report("FAIL", f"no {cfg.manifest_path.name} — run: portico init")
+        report("FAIL", f"no {cfg.manifest_path.name} — run: docketry init")
     adapters = home / "adapters.toml"
     if adapters.exists():
         from .notices import AdapterError, load_adapters_file
@@ -354,7 +354,7 @@ def cmd_doctor(args) -> None:
             __import__(mod)
             report("PASS", f"{what} available")
         except ImportError:
-            report("WARN", f"{what} missing — pip install 'portico-legal[{extra}]'")
+            report("WARN", f"{what} missing — pip install 'docketry[{extra}]'")
     for binary, pkg in (("tesseract", "tesseract-ocr"), ("pdftoppm", "poppler-utils")):
         if shutil.which(binary):
             report("PASS", f"{binary} present (OCR possible)")
@@ -398,11 +398,11 @@ def cmd_stats(args) -> None:
 
 
 def cmd_digest(args) -> None:
-    """Prints a paste-anywhere summary. Portico never sends anything."""
+    """Prints a paste-anywhere summary. Docketry never sends anything."""
     _, _, store = _open(args.home)
     s = store.stats(days=1)
     held = store.list_by_status("pending_review") + store.list_by_status("blocked")
-    lines = [f"Portico intake digest — {len(held)} awaiting review,"
+    lines = [f"Docketry intake digest — {len(held)} awaiting review,"
              f" {s['ingested']} ingested in the last day"]
     for row in held[:15]:
         env = json.loads(row["envelope_json"])
@@ -430,7 +430,7 @@ def cmd_demo(args) -> None:
     from .store import Store
     from .webui import make_server
 
-    home = Path(tempfile.mkdtemp(prefix="portico-demo-"))
+    home = Path(tempfile.mkdtemp(prefix="docketry-demo-"))
     (home / "guardrails.toml").write_text(DEMO_MANIFEST)
     pipeline = load_manifest(home / "guardrails.toml")
     store = Store(home / "store")
@@ -540,12 +540,12 @@ def cmd_status(args) -> None:
 
 
 def main(argv=None) -> None:
-    p = argparse.ArgumentParser(prog="portico", description="Local gate-enforced email port")
-    p.add_argument("--home", default="./portico-home", help="installation directory")
-    p.add_argument("--version", action="version", version=f"portico {__version__}")
+    p = argparse.ArgumentParser(prog="docketry", description="Local gate-enforced email port")
+    p.add_argument("--home", default="./docketry-home", help="installation directory")
+    p.add_argument("--version", action="version", version=f"docketry {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sp = sub.add_parser("init", help="set up a Portico home directory")
+    sp = sub.add_parser("init", help="set up a Docketry home directory")
     sp.add_argument("--host")
     sp.add_argument("--user")
     sp.add_argument("--folder")

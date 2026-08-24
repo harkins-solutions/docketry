@@ -20,7 +20,7 @@ jobs:
         run: pip install pypdf python-docx eyecite httpx coverage
       - name: Run tests with coverage
         env:
-          PORTICO_LEAK_SALT: ${{ secrets.PORTICO_LEAK_SALT }}
+          DOCKETRY_LEAK_SALT: ${{ secrets.DOCKETRY_LEAK_SALT }}
         run: |
-          coverage run --source=portico -m unittest discover -s tests -v
+          coverage run --source=docketry -m unittest discover -s tests -v
           coverage report --fail-under=85

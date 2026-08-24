@@ -1,9 +1,9 @@
 import unittest
 
-from portico.cite import (
+from docketry.cite import (
     CiteError, Lookup, name_matches, quotes_near, star_pages, verify,
 )
-from portico.cite import citation_inventory  # noqa: F401
+from docketry.cite import citation_inventory  # noqa: F401
 
 try:
     import eyecite  # noqa: F401

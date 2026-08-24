@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from portico.lint import RulepackError, lint, load_rulepack
+from docketry.lint import RulepackError, lint, load_rulepack
 
 SJ_DRAFT = """MOTION FOR SUMMARY JUDGMENT
 Wife conveniently omitted her own allergy testing from the verified petition.

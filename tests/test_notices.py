@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from portico.envelope import Envelope
-from portico.gates.notice import NoticeParser
-from portico.notices import (
+from docketry.envelope import Envelope
+from docketry.gates.notice import NoticeParser
+from docketry.notices import (
     AdapterError, builtin_adapters, load_adapters_file, parse, stack,
 )
 

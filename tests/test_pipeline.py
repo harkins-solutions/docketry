@@ -1,10 +1,10 @@
 import tempfile
 import unittest
 
-from portico import store as st
-from portico.envelope import Attachment, Envelope
-from portico.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
-from portico.store import Store
+from docketry import store as st
+from docketry.envelope import Attachment, Envelope
+from docketry.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
+from docketry.store import Store
 
 
 def env(attachments=None, from_addr="portal@court.gov"):

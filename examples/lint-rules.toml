@@ -1,4 +1,4 @@
-# Example firm style rulepack for `portico lint --rules`.
+# Example firm style rulepack for `docketry lint --rules`.
 # Rules are data: share packs between firms the way linter configs are shared.
 
 [[rule]]

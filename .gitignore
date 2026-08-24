@@ -3,7 +3,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-portico-home/
+docketry-home/
 *.db
 .venv/
 .coverage

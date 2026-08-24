@@ -1,6 +1,6 @@
 import unittest
 
-from portico.manifest import ManifestError, build_pipeline, DEFAULT_MANIFEST
+from docketry.manifest import ManifestError, build_pipeline, DEFAULT_MANIFEST
 import tomllib
 
 

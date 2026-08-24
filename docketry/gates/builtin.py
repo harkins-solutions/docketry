@@ -1,6 +1,6 @@
 """Starter gates. Deterministic pipeline-hygiene checks only.
 
-None of these is a security control. Portico makes no malware, phishing, or
+None of these is a security control. Docketry makes no malware, phishing, or
 other cybersecurity claims anywhere — these gates decide what the *pipeline*
 will accept, nothing more. Firms should get actual security from their mail
 provider and endpoint tooling.

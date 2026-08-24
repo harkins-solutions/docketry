@@ -1,7 +1,7 @@
 import unittest
 from email.message import EmailMessage
 
-from portico.envelope import parse_message, sanitize_filename
+from docketry.envelope import parse_message, sanitize_filename
 
 
 def make_raw(subject="Service of Court Documents", attach=True, html=False):
@@ -53,7 +53,7 @@ class TestEnvelope(unittest.TestCase):
         msg["From"] = "a@b.c"
         msg.set_content("x")
         env = parse_message(bytes(msg), source="t", fetched_at="x")
-        self.assertTrue(env.message_id.startswith("portico-"))
+        self.assertTrue(env.message_id.startswith("docketry-"))
 
     def test_sanitize_filename(self):
         self.assertEqual(sanitize_filename("../../etc/passwd"), "passwd")

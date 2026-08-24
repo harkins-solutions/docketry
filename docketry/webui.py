@@ -21,7 +21,7 @@ from .store import Store
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60">
-<title>Portico</title><style>
+<title>Docketry</title><style>
 body{{font-family:system-ui,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;color:#1a1a1a;background:#fafaf7}}
 h1{{font-size:1.3rem}} h2{{font-size:1.05rem;margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.3rem}}
 table{{border-collapse:collapse;width:100%;font-size:.9rem}} td,th{{text-align:left;padding:.35rem .5rem;border-bottom:1px solid #eee;vertical-align:top}}
@@ -31,7 +31,7 @@ table{{border-collapse:collapse;width:100%;font-size:.9rem}} td,th{{text-align:l
 form.inline{{display:inline}} input[type=text]{{width:7rem}} button{{cursor:pointer}}
 .counts span{{margin-right:1.2rem}}
 </style></head><body>
-<h1>Portico — local review</h1>
+<h1>Docketry — local review</h1>
 <p class="counts">{counts}</p>
 <h2>Held for review</h2>{queue}
 <h2>Doc-type proposals</h2>{classq}

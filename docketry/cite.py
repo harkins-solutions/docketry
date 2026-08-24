@@ -107,7 +107,7 @@ def _extract(text: str) -> tuple[list[Citation], int]:
     except ImportError:
         raise CiteError(
             "citation extraction needs the 'cite' extra:"
-            " pip install 'portico-legal[cite]'"
+            " pip install 'docketry[cite]'"
         ) from None
 
     out: list[Citation] = []

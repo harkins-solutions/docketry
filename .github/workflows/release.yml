@@ -10,11 +10,11 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact: portico-windows.exe
+            artifact: docketry-windows.exe
           - os: macos-latest
-            artifact: portico-macos
+            artifact: docketry-macos
           - os: ubuntu-latest
-            artifact: portico-linux
+            artifact: docketry-linux
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,10 +24,10 @@ jobs:
       - name: Build single-file executable
         run: |
           pip install pyinstaller pypdf python-docx eyecite httpx
-          pyinstaller --onefile --name portico --collect-data reporters_db --collect-data courts_db portico_app.py
+          pyinstaller --onefile --name docketry --collect-data reporters_db --collect-data courts_db docketry_app.py
       - name: Rename artifact
         shell: bash
-        run: mv dist/portico* "dist/${{ matrix.artifact }}" 2>/dev/null || mv dist/portico.exe "dist/${{ matrix.artifact }}"
+        run: mv dist/docketry* "dist/${{ matrix.artifact }}" 2>/dev/null || mv dist/docketry.exe "dist/${{ matrix.artifact }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from portico.config import load_home, write_config
+from docketry.config import load_home, write_config
 
 
 class TestConfig(unittest.TestCase):
@@ -24,11 +24,11 @@ class TestConfig(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
             write_config(home, host="h", user="u", password="stored-secret")
-            os.environ["PORTICO_IMAP_PASSWORD"] = "env-secret"
+            os.environ["DOCKETRY_IMAP_PASSWORD"] = "env-secret"
             try:
                 self.assertEqual(load_home(home).mailbox.password, "env-secret")
             finally:
-                del os.environ["PORTICO_IMAP_PASSWORD"]
+                del os.environ["DOCKETRY_IMAP_PASSWORD"]
             self.assertEqual(load_home(home).mailbox.password, "stored-secret")
 
     def test_missing_config_means_no_mailbox(self):
