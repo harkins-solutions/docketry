@@ -6,3 +6,4 @@ build/
 portico-home/
 *.db
 .venv/
+.coverage

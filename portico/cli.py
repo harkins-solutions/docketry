@@ -83,6 +83,8 @@ def cmd_poll(args) -> None:
                                  result.fields, result.missing)
                 parsed += 1
             status = runner.enter(msg_id)
+            while status == st.OK:
+                status = runner.advance(msg_id)
             if status in (st.PENDING_REVIEW, st.BLOCKED):
                 held += 1
         store.set_imap_cursor(mb.label, current_validity, max_uid)

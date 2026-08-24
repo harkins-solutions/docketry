@@ -1,0 +1,4 @@
+schema_version: "1.1"
+name: "Runs the verifier instead of answering from model knowledge"
+context:
+  scaffold_script: "scaffold.sh"
