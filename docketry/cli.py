@@ -174,6 +174,173 @@ def cmd_notices(args) -> None:
         print(line)
 
 
+
+def _parse_box(spec: str):
+    """page:x0,y0,x1,y1 — fractions of the page, top-left origin."""
+    from .redact import Box, RedactionError
+    try:
+        page, rest = spec.split(":", 1)
+        x0, y0, x1, y1 = (float(v) for v in rest.split(","))
+    except ValueError:
+        raise RedactionError(
+            f"bad box {spec!r}; expected page:x0,y0,x1,y1 (e.g. 1:0.1,0.2,0.5,0.24)"
+        ) from None
+    return Box(page=int(page), x0=x0, y0=y0, x1=x1, y1=y1)
+
+
+def cmd_redact_scan(args) -> None:
+    """PREVIEW only. Writes nothing."""
+    from .redact import RedactionError, find_terms
+    try:
+        hits = find_terms(args.file, args.term)
+    except RedactionError as e:
+        sys.exit(str(e))
+    if not hits:
+        print("no occurrences found — nothing would be redacted")
+        return
+    by_page: dict[int, int] = {}
+    for h in hits:
+        by_page[h.page] = by_page.get(h.page, 0) + 1
+        print(f"  p{h.page}  {h.note!r}  at ({h.x0:.3f},{h.y0:.3f})-({h.x1:.3f},{h.y1:.3f})")
+    pages = ", ".join(f"p{p} x{n}" for p, n in sorted(by_page.items()))
+    print(f"\n{len(hits)} occurrence(s) on {len(by_page)} page(s): {pages}")
+    print("PREVIEW ONLY — nothing written. Re-run as 'redact-apply' to write a copy.")
+
+
+def cmd_redact_apply(args) -> None:
+    from .redact import RedactionError, apply, find_terms
+    boxes = []
+    try:
+        if args.term:
+            boxes += find_terms(args.file, args.term)
+        boxes += [_parse_box(b) for b in (args.box or [])]
+        if not boxes:
+            sys.exit("nothing to redact: give --term and/or --box")
+        result = apply(args.file, boxes, args.out,
+                       marker=None if args.no_marker else args.marker,
+                       verify_terms=args.term or None)
+    except RedactionError as e:
+        sys.exit(str(e))
+
+    print(f"wrote {result.out_path}")
+    print(f"  rasterised: {result.pages_rasterised or 'none'}"
+          f"   untouched: {result.pages_untouched or 'none'}")
+    if result.page_confidence:
+        conf = ", ".join(f"p{p} {c:.0f}" for p, c in sorted(result.page_confidence.items()))
+        print(f"  rebuilt text layer confidence: {conf}")
+    if result.words_removed:
+        shown = result.words_removed[:8]
+        more = "" if len(result.words_removed) <= 8 else f" (+{len(result.words_removed)-8} more)"
+        print(f"  removed {len(result.words_removed)} word(s): {', '.join(shown)}{more}")
+    for w in result.warnings:
+        print(_sev("warn") + f"  {w}")
+    if result.survivors:
+        # Loud, and non-zero: this is the whole point of the check.
+        print(_sev("FAIL") + "  these terms are STILL extractable from the output: "
+              + ", ".join(result.survivors))
+        print("  a term can survive because the burn missed it, or because the same"
+              " word appears elsewhere in the document unmarked. Check before"
+              " releasing this file.")
+        sys.exit(1)
+    if result.unverifiable:
+        for u in result.unverifiable:
+            print(_sev("warn") + f"  {u}")
+        print(_sev("warn") + f"  {len(result.unverifiable)} box(es) could not be"
+              " machine-verified — the content is destroyed, but only your eyes"
+              " can confirm what was under them")
+    if result.also_appears:
+        print(_sev("warn") + "  redacted phrases still standing elsewhere in this"
+              " document (often a missed second occurrence): "
+              + ", ".join(result.also_appears))
+    n_ok = len([b for b in boxes if b.kind == "redact"]) - len(result.unverifiable)
+    if n_ok > 0:
+        print(_sev("  ok") + f"  verified {n_ok} redaction(s): nothing they"
+              " buried is readable inside them")
+
+
+def cmd_redact_verify(args) -> None:
+    from .redact import verify
+    survivors = verify(args.file, args.term)
+    if survivors:
+        print(_sev("FAIL") + "  still extractable: " + ", ".join(survivors))
+        sys.exit(1)
+    print(_sev("  ok") + f"  none of the {len(args.term)} term(s) appear in {args.file}")
+
+
+
+def _timeline(args):
+    from .timeline import build
+    _, _, store = _open(args.home)
+    return build(store, args.case, threads=args.thread or None)
+
+
+def cmd_timeline(args) -> None:
+    from .timeline import LAYERS
+    tl = _timeline(args)
+    layers = tuple(args.layer) if args.layer else LAYERS
+    rows = tl.sorted_entries(layers, thread=args.in_thread)
+    if not rows:
+        print(f"no entries for case {args.case}")
+        return
+    for e in rows:
+        when = (e.when[:16].replace("T", " ") or "(undated)").ljust(16)
+        num = f"#{e.doc_number}" if e.doc_number else ""
+        print(f"  {when}  {e.layer[:6].ljust(6)}  {e.kind.ljust(8)} {num.ljust(5)}"
+              f" {e.title[:70]}")
+    print(f"\n{len(rows)} entry(ies) in {len(tl.threads())} thread(s)")
+    for g in tl.gaps:
+        print(_sev("warn") + f"  [{g['class']}] {g['detail']}")
+    for f in tl.findings:
+        print(_sev("warn") + f"  {f}")
+    print("reconstructed from what this firm received — NOT the court's docket,"
+          " and not a completeness claim")
+
+
+def cmd_timeline_export(args) -> None:
+    from .export import to_docx, to_xlsx
+    from .timeline import LAYERS
+    tl = _timeline(args)
+    layers = tuple(args.layer) if args.layer else LAYERS
+    out = Path(args.out)
+    fn = to_xlsx if out.suffix.lower() == ".xlsx" else to_docx
+    if out.suffix.lower() not in (".xlsx", ".docx"):
+        sys.exit("output must end in .xlsx or .docx")
+    try:
+        fn(tl, out, layers=layers, thread=args.in_thread)
+    except RuntimeError as e:
+        sys.exit(str(e))
+    print(f"wrote {out} ({len(tl.sorted_entries(layers, thread=args.in_thread))} rows)")
+
+
+def cmd_docket_reconcile(args) -> None:
+    from .reconcile import parse_docket, reconcile
+    tl = _timeline(args)
+    text = Path(args.docket).read_text(errors="replace")
+    lines = parse_docket(text)
+    if not lines:
+        sys.exit("could not read any docket lines from that file —"
+                 " expected a CSV with headers, or 'number date title' lines")
+    rec = reconcile(tl, lines)
+    print(f"pulled docket: {len(lines)} line(s); reconstruction:"
+          f" {len([e for e in tl.entries if e.of_record])} record entry(ies)")
+    print(f"  matched on document number: {len(rec.matched)}")
+    for line in rec.only_on_docket:
+        print(_sev("FAIL") + f"  on the docket, NOT here: "
+              f"{('#' + str(line.doc_number) + ' ') if line.doc_number else ''}"
+              f"{line.date} {line.title[:60]}")
+    for e in rec.only_here:
+        print(_sev("warn") + f"  here, NOT on the docket: {e.when[:10]}"
+              f" {e.title[:60]}")
+    for line, e in rec.to_confirm:
+        print(_sev("warn") + f"  probable match, CONFIRM BY HAND: docket"
+              f" '{line.title[:40]}' <-> ours '{e.title[:40]}'")
+    if rec.clean:
+        print(_sev("  ok") + "  every record entry is accounted for in both"
+              " directions")
+    else:
+        sys.exit(1)
+
+
 def cmd_verify_draft(args) -> None:
     from .cite import CiteError, verify, extract_citations
     from .extract import ExtractionError, extract_path
@@ -574,6 +741,50 @@ def main(argv=None) -> None:
     sp = sub.add_parser("notices", help="list parsed court notices")
     sp.add_argument("--type", choices=["service_notice", "filing_receipt", "hearing_notice"])
     sp.set_defaults(fn=cmd_notices)
+
+    def _tl_args(sp):
+        sp.add_argument("case", help="case number, in any of its formats")
+        sp.add_argument("--thread", action="append",
+                        help="thread key to attach as correspondence; repeatable")
+        sp.add_argument("--layer", action="append",
+                        choices=["record", "correspondence", "client", "derived"],
+                        help="restrict to these layers; repeatable")
+        sp.add_argument("--in-thread", help="only entries in this thread")
+        return sp
+
+    sp = _tl_args(sub.add_parser("timeline", help="the case as this firm received it"))
+    sp.set_defaults(fn=cmd_timeline)
+
+    sp = _tl_args(sub.add_parser("timeline-export", help="write the timeline to .docx or .xlsx"))
+    sp.add_argument("out", help="output path ending .docx or .xlsx")
+    sp.set_defaults(fn=cmd_timeline_export)
+
+    sp = _tl_args(sub.add_parser("docket-reconcile", help="diff the reconstruction against a pulled docket"))
+    sp.add_argument("docket", help="docket a human exported/pasted (CSV or text)")
+    sp.set_defaults(fn=cmd_docket_reconcile)
+
+    sp = sub.add_parser("redact-scan", help="PREVIEW where terms appear in a PDF (writes nothing)")
+    sp.add_argument("file")
+    sp.add_argument("--term", action="append", required=True,
+                    help="term to find; repeatable")
+    sp.set_defaults(fn=cmd_redact_scan)
+
+    sp = sub.add_parser("redact-apply", help="write a redacted copy: text removed, page still searchable")
+    sp.add_argument("file")
+    sp.add_argument("out", help="output path (the source is never modified)")
+    sp.add_argument("--term", action="append", help="redact every occurrence; repeatable")
+    sp.add_argument("--box", action="append",
+                    help="page:x0,y0,x1,y1 as page fractions; repeatable")
+    sp.add_argument("--marker", default="[REDACTED]",
+                    help="text placed in each bar and in the text layer")
+    sp.add_argument("--no-marker", action="store_true",
+                    help="leave the bar unlabelled and the text layer silent")
+    sp.set_defaults(fn=cmd_redact_apply)
+
+    sp = sub.add_parser("redact-verify", help="check a finished file for terms that survived")
+    sp.add_argument("file")
+    sp.add_argument("--term", action="append", required=True)
+    sp.set_defaults(fn=cmd_redact_verify)
 
     sp = sub.add_parser("verify-draft", help="verify every citation in a draft (exists/name/quote/pin)")
     sp.add_argument("file", help="draft file (.docx, .pdf, .txt)")

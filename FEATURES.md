@@ -114,6 +114,22 @@ the pipeline — never a prompt-only parallel path.
 - Internal: F4, F5, F6.
 - External: none beyond what those features already declare.
 
+### F11 — Redaction + highlight — SHIPPED v0.9
+Removes text rather than covering it, and keeps the page searchable. Pages
+carrying a redaction are rasterised with the redacted areas blanked, OCR'd to
+rebuild an invisible text layer, and given a vector overlay: opaque bars,
+translucent highlights, and a `[REDACTED]` marker that is real text — so an
+extractor reports a redaction instead of a silent gap. Pages with no redaction
+keep their original vector text; highlight-only pages are never rasterised.
+`redact-scan` previews and writes nothing; `redact-apply` writes a copy and
+then re-reads it, reporting any term still extractable and exiting non-zero.
+Degenerate boxes are refused, not clamped — a zero-area box draws nothing but
+would still cost the page its text layer.
+- Internal: F2 (the same OCR path and extractor, reused for verification).
+- External: none beyond F2's `pdf` and `ocr` extras — `pypdf`, plus the
+  Tesseract binary, `pytesseract` and `Pillow`. The overlay is hand-built
+  rather than pulling in a PDF drawing library.
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -123,7 +139,7 @@ outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
 ## Build order
 
 F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
-F4 -> F9 -> F8 -> F7 -> F10.
+F4 -> F9 -> F8 -> F11 -> F7 -> F10.
 
 F3 before F2 because it needs nothing but the envelope and proves the
 gate-plugin story end to end; F5 before F6 because the linter borrows the

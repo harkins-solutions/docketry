@@ -92,12 +92,18 @@ class TestExtractPdf(unittest.TestCase):
             self.assertEqual(r.page_for_offset(offset), 2)
             self.assertEqual(r.page_for_offset(0), 1)
 
-    def test_scanned_pdf_warns_when_ocr_unavailable(self):
-        # A PDF whose pages carry no text stream content.
+    def test_scanned_pdf_warns_when_ocr_is_not_used(self):
+        """A page with no text and no OCR must say so, never return silence.
+
+        This asked for ocr="auto" and relied on the machine having no
+        tesseract, so it passed for a reason that had nothing to do with the
+        behaviour under test — and started failing the moment CI installed the
+        OCR toolchain. Ask for the no-OCR path explicitly instead.
+        """
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "scan.pdf"
             p.write_bytes(minimal_pdf([""]))
-            r = extract_path(p)  # ocr=auto; OCR extra not installed in CI
+            r = extract_path(p, ocr="never")
             self.assertTrue(any("no extractable text" in w for w in r.warnings))
 
 
