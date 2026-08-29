@@ -229,3 +229,85 @@ class TestAdapterPanel(unittest.TestCase):
                                  "name": "x", "notice_type": "hearing_notice"})
         self.assertEqual(code, 403)
         self.assertFalse((self.home / "adapters.toml").exists())
+
+
+class TestReportPage(unittest.TestCase):
+    """The page someone opens to see whether the pipeline is healthy."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = Path(self.tmp.name)
+        (self.home / "store").mkdir()
+        store = Store(self.home / "store")
+        for i in range(6):
+            store.ingest(held_envelope(100 + i), first_stage="ingest")
+        # No attachment on purpose: a notice that names a document we do not
+        # hold is exactly what the report should surface.
+        linkonly = Envelope(
+            message_id="link200", from_addr="clerk@uscourts.gov", to=[], cc=[],
+            date="", subject="Activity in Case", body_text="see link",
+            attachments=[], raw_sha256="d" * 64, source="t", fetched_at="now")
+        mid = store.ingest(linkonly, first_stage="ingest")
+        store.add_notice(mid, "pacer-nef", "service_notice",
+                         {"document_link": "https://ecf.example/x"}, [])
+        store.add_finding(mid, "ingest", "attachment-policy", "fail",
+                          "attachment exceeds the policy")
+        store.open_matter("826CV1", stage="intake")
+        store.db.execute(
+            "UPDATE matters SET updated_at = datetime('now', '-90 days')")
+        store.db.commit()
+        store.close()
+        self.pipeline = load_manifest(MANIFEST)
+        self.server = make_server(self.home / "store", self.pipeline, port=0,
+                                  home=self.home, firm_domains=("example.com",))
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.request("GET", path)
+        r = conn.getresponse()
+        return r.status, r.read().decode()
+
+    def test_the_page_renders(self):
+        code, body = self._get("/report")
+        self.assertEqual(code, 200)
+        self.assertIn("Pipeline health", body)
+
+    def test_it_states_it_does_not_measure_people(self):
+        import re
+        _, body = self._get("/report")
+        # Assert on the words, not on where the template happens to wrap.
+        flat = re.sub(r"\s+", " ", body)
+        self.assertIn("does not measure people", flat)
+
+    def test_it_surfaces_a_document_we_were_told_about_and_do_not_hold(self):
+        _, body = self._get("/report")
+        self.assertIn("cannot open them", body)
+
+    def test_it_names_gates_that_never_fired(self):
+        _, body = self._get("/report")
+        self.assertIn("never fired", body)
+
+    def test_it_lists_a_matter_that_has_not_moved(self):
+        _, body = self._get("/report")
+        self.assertIn("826CV1", body)
+        self.assertIn("not a scoreboard", body)
+
+    def test_it_is_reachable_from_the_queue(self):
+        _, body = self._get("/")
+        self.assertIn('href="/report"', body)
+
+    def test_no_approver_name_reaches_the_page(self):
+        store = Store(self.home / "store")
+        rows = store.list_by_status(st.OK) + store.list_by_status(st.PENDING_REVIEW)
+        store.add_approval(rows[0]["id"], "ingest", "sender-scope",
+                           approved_by="Dana Reyes", role="paralegal", note="")
+        store.close()
+        _, body = self._get("/report")
+        self.assertNotIn("Dana", body)

@@ -93,6 +93,29 @@ class Envelope:
     # to backfill.
     in_reply_to: str = ""
     references: list[str] = field(default_factory=list)
+    # Set when the sender declared this machine-generated. Captured at ingest
+    # because, like the threading headers, it cannot be recovered later.
+    auto_submitted: str = ""      # RFC 3834: auto-generated | auto-replied
+    precedence: str = ""          # bulk | list | junk
+    list_id: str = ""
+
+    @property
+    def one_way(self) -> bool:
+        """True when nobody is on the other end of a reply.
+
+        E-service notices, NEFs and court calendaring mail are announcements.
+        Measuring conversation against them is measuring nothing, and mixing
+        their volume with real correspondence buries the handful of messages a
+        person actually has to answer.
+        """
+        if self.auto_submitted and self.auto_submitted.lower() != "no":
+            return True
+        if self.precedence.lower() in ("bulk", "list", "junk") or self.list_id:
+            return True
+        local = self.from_addr.split("@")[0].lower()
+        return any(m in local for m in
+                   ("noreply", "no-reply", "donotreply", "do-not-reply",
+                    "mailer-daemon", "postmaster", "notification", "automated"))
 
     @property
     def thread_key(self) -> str:
@@ -191,4 +214,7 @@ def parse_message(raw: bytes, *, source: str, fetched_at: str) -> Envelope:
         fetched_at=fetched_at,
         in_reply_to=(msg.get("In-Reply-To") or "").strip().strip("<>"),
         references=_msgids(msg.get("References")),
+        auto_submitted=(msg.get("Auto-Submitted") or "").strip(),
+        precedence=(msg.get("Precedence") or "").strip(),
+        list_id=(msg.get("List-Id") or "").strip(),
     )

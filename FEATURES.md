@@ -211,6 +211,33 @@ lies, and the docs say so.
 - Internal: F0 (store), F1 (gates and approvals share the registry).
 - External: none — stdlib `tomllib`.
 
+### F15 — Pipeline health report — SHIPPED v0.14
+Where the volume came from (by sender domain, split internal/external once
+`[firm] domains` is set), how long each GATE held things (median and slowest
+tenth, not a mean that hides the bad days), and what actually held them up.
+
+Announcements and conversations are counted apart. E-service notices, NEFs and
+court calendaring mail are one-way: nobody replies to them, so nothing
+conversational is measured against them and their volume does not bury the
+handful of messages someone actually has to answer. A source is one-way when it
+says so in its headers (Auto-Submitted, Precedence, List-Id, captured at ingest
+because they cannot be recovered later), when an adapter recognised its mail as
+a court notice, or when the address is a noreply.
+
+Its real value is the two kinds of rot nobody notices by hand: a gate that has
+been configured for months and has never once fired, and an adapter that
+matched forty notices last month and none since — which means that court
+changed its template. It also counts documents named in a notice with a link
+and no copy, and matters that have not moved.
+
+It does NOT measure people, and cannot honestly: Docketry has no login, so the
+only names it holds are free-text strings typed into an approval, where three
+spellings are three people and anyone can type anyone. Approvals are counted by
+role and turnaround by gate. A test asserts no approver's name reaches the
+report.
+- Internal: F0 (store), F1 (gate list), F14 (matters).
+- External: none.
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -223,7 +250,7 @@ F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
 <<<<<<< Updated upstream
 F4 -> F9 -> F8 -> F11 -> F7 -> F10.
 =======
-F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F7 -> F10.
+F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F15 -> F7 -> F10.
 >>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the
