@@ -59,7 +59,11 @@ the Florida ePortal (service), PACER/CM-ECF NEFs (federal service; the
 one-time "free look" link is captured as data, never fetched), JACS and JAWS
 hearing notices, and Tyler e-filing receipts — plus firm-defined adapters as
 TOML config (`adapters.toml`, consulted before built-ins) so any local
-court's format can be added or overridden without code. Common schema across
+court's format can be added or overridden without code — and since v0.12 that
+no longer means authoring regular expressions: the review UI's **Court
+adapters** panel takes a pasted notice email, finds its labelled fields, shows
+the value it would capture from that message, and saves only after the real
+parser succeeds against it. Common schema across
 a three-type taxonomy: service_notice / filing_receipt / hearing_notice.
 Format parsing only; a matched notice missing a required field bounces to the
 review queue — template drift fails loudly, never silently.
