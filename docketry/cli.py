@@ -532,6 +532,75 @@ def cmd_roles(args) -> None:
           " it catches mistakes, not lies")
 
 
+
+def cmd_report(args) -> None:
+    """Pipeline health. Counted by role and by gate, never by person."""
+    from .report import build
+    cfg, pipeline, store = _open(args.home)
+    rep = build(store, pipeline, days=args.days,
+                firm_domains=cfg.firm_domains)
+
+    print(f"last {rep.days} days — {rep.ingested} message(s) in")
+    if rep.by_status:
+        print("  " + "   ".join(f"{k}: {v}" for k, v in sorted(rep.by_status.items())))
+
+    if rep.correspondence:
+        print("\ncorrespondence — mail someone has to answer")
+        for domain, n in rep.correspondence[:10]:
+            print(f"  {str(n).rjust(5)}  {domain}")
+    if rep.notifications:
+        print("\nnotifications — one-way, nobody replies to these")
+        for domain, n in rep.notifications[:10]:
+            print(f"  {str(n).rjust(5)}  {domain}")
+    if rep.internal or rep.external:
+        print(f"\n  external {rep.external} · internal {rep.internal}"
+              + (f" · unattributed {rep.unknown_side}" if rep.unknown_side else ""))
+
+    if rep.turnaround:
+        print("\nhow long each check held things (hours)")
+        for gate, t in sorted(rep.turnaround.items(),
+                              key=lambda kv: -(kv[1]["p90"] or 0)):
+            print(f"  {gate.ljust(22)} n={str(t['n']).ljust(4)}"
+                  f" median {t['p50']}   slowest tenth {t['p90']}")
+
+    if rep.hold_reasons:
+        print("\nwhat held them up")
+        for gate, summary, n in rep.hold_reasons:
+            print(f"  {str(n).rjust(4)}  [{gate}] {summary[:70]}")
+
+    if rep.quiet_adapters:
+        print()
+        for name, was, now in rep.quiet_adapters:
+            print(_sev("warn") + f"  '{name}' matched {was} notice(s) in the"
+                  f" previous {rep.days} days and none since — that source"
+                  " probably changed its template")
+
+    if rep.silent_gates:
+        print()
+        print(_sev("warn") + "  configured but never fired: "
+              + ", ".join(rep.silent_gates))
+        print("      a gate that has never caught anything is not protecting"
+              " anything; check it still matches reality")
+
+    if rep.documents_not_held:
+        print()
+        print(_sev("warn") + f"  {rep.documents_not_held} document(s) were named"
+              " in a notice with a link but no copy — you were told about them"
+              " and cannot open them")
+
+    if rep.stuck_matters:
+        print("\nmatters that have not moved")
+        for case, stage, d in rep.stuck_matters[:10]:
+            print(f"  {str(int(d)).rjust(4)}d  {case.ljust(18)} {stage}")
+        print("      standing still is not the same as neglected — this is"
+              " visibility, not a scoreboard")
+
+    for note in rep.notes:
+        print("\n  " + note)
+    print("\ncounted by role and by gate. Docketry has no login, so it does not"
+          " measure people.")
+
+
 def cmd_verify_draft(args) -> None:
     from .cite import CiteError, verify, extract_citations
     from .extract import ExtractionError, extract_path
@@ -657,7 +726,7 @@ def cmd_ui(args) -> None:
     cfg, pipeline, store = _open(args.home)
     store.close()
     server = make_server(cfg.store_path, pipeline, port=args.port,
-                         home=cfg.home)
+                         home=cfg.home, firm_domains=cfg.firm_domains)
     print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()
@@ -1002,6 +1071,10 @@ def main(argv=None) -> None:
                         help="restrict to these layers; repeatable")
         sp.add_argument("--in-thread", help="only entries in this thread")
         return sp
+
+    sp = sub.add_parser("report", help="pipeline health: sources, bottlenecks, dead config")
+    sp.add_argument("--days", type=int, default=30)
+    sp.set_defaults(fn=cmd_report)
 
     sp = sub.add_parser("roles", help="who may release what")
     sp.set_defaults(fn=cmd_roles)

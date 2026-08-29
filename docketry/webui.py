@@ -33,7 +33,7 @@ form.inline{{display:inline}} input[type=text]{{width:7rem}} button{{cursor:poin
 .counts span{{margin-right:1.2rem}}
 </style></head><body>
 <h1>Docketry — local review</h1>
-<p><a href="/adapters">Court adapters</a></p>
+<p><a href="/adapters">Court adapters</a> · <a href="/report">Pipeline health</a></p>
 <p class="counts">{counts}</p>
 <h2>Held for review</h2>{queue}
 <h2>Doc-type proposals</h2>{classq}
@@ -228,7 +228,106 @@ def _candidate_form(token: str, sample: str, env, cands, suggested: dict) -> str
     )
 
 
-def make_server(store_path, pipeline, host="127.0.0.1", port=8642, home=None):
+
+_REPORT = """<!doctype html><html><head><meta charset="utf-8">
+<title>Docketry — pipeline health</title><style>
+body{{font-family:system-ui,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;color:#1a1a1a;background:#fafaf7}}
+h1{{font-size:1.3rem}} h2{{font-size:1.05rem;margin-top:1.8rem;border-bottom:1px solid #ddd;padding-bottom:.3rem}}
+table{{border-collapse:collapse;width:100%;font-size:.9rem}} td,th{{text-align:left;padding:.3rem .5rem;border-bottom:1px solid #eee}}
+td.n{{text-align:right;font-variant-numeric:tabular-nums;width:5rem}}
+.hint{{color:#666;font-size:.85rem}} .warn{{color:#a60}} .foot{{color:#888;font-size:.8rem;margin-top:2.5rem}}
+.bar{{display:inline-block;height:.55rem;background:#8aa4c8;border-radius:.2rem;vertical-align:middle}}
+</style></head><body>
+<h1>Pipeline health <span class="hint">· last {days} days</span></h1>
+<p><a href="/">&larr; back to the queue</a> · <a href="/adapters">Court adapters</a></p>
+{body}
+<p class="foot">Counted by role and by gate. Docketry has no login, so it does
+not measure people — the only names it holds are the ones typed into an
+approval, and numbers built on those would be wrong as well as unkind.</p>
+</body></html>"""
+
+
+def _bar(n: int, top: int) -> str:
+    width = 0 if not top else max(2, round(n / top * 160))
+    return f'<span class="bar" style="width:{width}px"></span>'
+
+
+def _report_body(rep) -> str:
+    out = [f"<p>{rep.ingested} message(s) in."
+           + ("  " + " · ".join(f"{_esc(k)}: {v}" for k, v in sorted(rep.by_status.items()))
+              if rep.by_status else "") + "</p>"]
+
+    top = rep.by_domain[0][1] if rep.by_domain else 0
+    for title, rows_src, note in (
+        ("Correspondence", rep.correspondence,
+         "Mail someone has to answer."),
+        ("Notifications", rep.notifications,
+         "One-way. Nobody replies to these, so nothing conversational is"
+         " measured against them."),
+    ):
+        if not rows_src:
+            continue
+        rows = "".join(
+            f'<tr><td class="n">{n}</td><td>{_bar(n, top)}</td>'
+            f"<td>{_esc(d)}</td></tr>" for d, n in rows_src[:12])
+        out.append(f"<h2>{title}</h2><table>{rows}</table>"
+                   f'<p class="hint">{note}</p>')
+    if rep.by_domain and (rep.internal or rep.external):
+        out.append(f'<p class="hint">external {rep.external} ·'
+                   f" internal {rep.internal}</p>")
+
+    if rep.turnaround:
+        rows = "".join(
+            f"<tr><td>{_esc(g)}</td><td class='n'>{t['n']}</td>"
+            f"<td class='n'>{t['p50']}</td><td class='n'>{t['p90']}</td></tr>"
+            for g, t in sorted(rep.turnaround.items(),
+                               key=lambda kv: -(kv[1]["p90"] or 0)))
+        out.append("<h2>How long each check held things</h2>"
+                   "<table><tr><th>Gate</th><th class='n'>Released</th>"
+                   "<th class='n'>Median hrs</th><th class='n'>Slowest tenth</th>"
+                   f"</tr>{rows}</table>"
+                   '<p class="hint">Per check, not per person: the answerable'
+                   " question is which step is the bottleneck.</p>")
+
+    if rep.hold_reasons:
+        rows = "".join(f"<tr><td class='n'>{n}</td><td>{_esc(g)}</td>"
+                       f"<td>{_esc(sm)}</td></tr>"
+                       for g, sm, n in rep.hold_reasons)
+        out.append("<h2>What held them up</h2><table>" + rows + "</table>")
+
+    alerts = []
+    for name, was, now in rep.quiet_adapters:
+        alerts.append(f"<li><strong>{_esc(name)}</strong> matched {was} notice(s)"
+                      f" in the previous {rep.days} days and none since — that"
+                      " source has probably changed its template.</li>")
+    if rep.silent_gates:
+        alerts.append("<li><strong>Configured but never fired:</strong> "
+                      + _esc(", ".join(rep.silent_gates))
+                      + ". A gate that has never caught anything is not"
+                      " protecting anything.</li>")
+    if rep.documents_not_held:
+        alerts.append(f"<li><strong>{rep.documents_not_held} document(s)</strong>"
+                      " were named in a notice with a link but no copy. You were"
+                      " told about them and cannot open them.</li>")
+    if alerts:
+        out.append('<h2>Worth looking at</h2><ul class="warn">'
+                   + "".join(alerts) + "</ul>")
+
+    if rep.stuck_matters:
+        rows = "".join(f"<tr><td class='n'>{int(d)}d</td><td>{_esc(c)}</td>"
+                       f"<td>{_esc(st)}</td></tr>"
+                       for c, st, d in rep.stuck_matters[:15])
+        out.append("<h2>Matters that have not moved</h2><table>" + rows + "</table>"
+                   '<p class="hint">Standing still is not the same as neglected.'
+                   " This is visibility, not a scoreboard.</p>")
+
+    for note in rep.notes:
+        out.append(f'<p class="hint">{_esc(note)}</p>')
+    return "\n".join(out)
+
+
+def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
+                home=None, firm_domains=()):
     # adapters.toml lives in the Docketry home, beside the store.
     home = Path(home) if home else Path(store_path).parent
     if host != "127.0.0.1":
@@ -265,6 +364,17 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642, home=None):
         def do_GET(self):
             if self.path in ("/adapters", "/adapters/"):
                 self._adapters_page()
+                return
+            if self.path in ("/report", "/report/"):
+                from .report import build
+                store = self._store()
+                try:
+                    rep = build(store, pipeline, days=30,
+                                firm_domains=firm_domains)
+                    self._html(_REPORT.format(days=rep.days,
+                                              body=_report_body(rep)))
+                finally:
+                    store.close()
                 return
             if self.path not in ("/", ""):
                 self._html("not found", 404)

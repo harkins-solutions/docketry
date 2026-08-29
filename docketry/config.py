@@ -32,6 +32,8 @@ class HomeConfig:
     llm: LLMConfig | None = None
     # Filled in by the CLI once roles.toml has been read.
     registry: object | None = None
+    # Your own domains, so inbound can be split internal/external.
+    firm_domains: tuple = ()
 
 
 def write_config(
@@ -63,6 +65,7 @@ def load_home(home: str | Path) -> HomeConfig:
     cfg_path = home / CONFIG_NAME
     mailbox = None
     llm = None
+    firm_domains = ()
     if cfg_path.exists():
         data = tomllib.loads(cfg_path.read_text())
         mb = data.get("mailbox", {})
@@ -75,6 +78,7 @@ def load_home(home: str | Path) -> HomeConfig:
                 folder=mb.get("folder", "INBOX"),
                 port=int(mb.get("port", 993)),
             )
+        firm_domains = tuple(data.get("firm", {}).get("domains", []))
         ml = data.get("llm", {})
         if ml.get("base_url") and ml.get("model"):
             # Not validated here: an unreachable or public endpoint must be
@@ -90,4 +94,5 @@ def load_home(home: str | Path) -> HomeConfig:
         manifest_path=home / MANIFEST_NAME,
         store_path=home / STORE_DIR,
         llm=llm,
+        firm_domains=firm_domains,
     )

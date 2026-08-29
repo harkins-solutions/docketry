@@ -344,6 +344,102 @@ class Store:
             "classifications": classifications,
         }
 
+
+    # -- report queries --------------------------------------------------
+    def sender_counts(self, days: int) -> list[tuple[str, int]]:
+        """(from_addr, count) over the window. Domains are derived upstream."""
+        rows = self.db.execute(
+            "SELECT json_extract(envelope_json, '$.from_addr') a, COUNT(*) n"
+            " FROM messages WHERE fetched_at >= datetime('now', ?)"
+            " GROUP BY a ORDER BY n DESC", (f"-{days} days",)).fetchall()
+        return [(r["a"] or "", r["n"]) for r in rows if r["a"]]
+
+    def sender_profile(self, days: int) -> list[tuple[str, int, int, int]]:
+        """(from_addr, total, machine_flagged, notice_parsed) per sender.
+
+        Two independent signals that a source is one-way: the sender said so
+        in its headers, or an adapter recognised its mail as a court notice.
+        Either is enough; a source needs neither to be correspondence.
+        """
+        rows = self.db.execute(
+            "SELECT json_extract(m.envelope_json, '$.from_addr') a,"
+            " COUNT(*) n,"
+            " SUM(CASE WHEN COALESCE(json_extract(m.envelope_json,"
+            "      '$.auto_submitted'), '') <> ''"
+            "       OR COALESCE(json_extract(m.envelope_json,"
+            "      '$.precedence'), '') <> ''"
+            "       OR COALESCE(json_extract(m.envelope_json,"
+            "      '$.list_id'), '') <> '' THEN 1 ELSE 0 END) machine,"
+            " SUM(CASE WHEN EXISTS (SELECT 1 FROM notices no"
+            "                        WHERE no.message_id = m.id)"
+            "       THEN 1 ELSE 0 END) noticed"
+            " FROM messages m WHERE m.fetched_at >= datetime('now', ?)"
+            " GROUP BY a ORDER BY n DESC", (f"-{days} days",)).fetchall()
+        return [(r["a"] or "", r["n"], r["machine"] or 0, r["noticed"] or 0)
+                for r in rows if r["a"]]
+
+    def release_hours_by_gate(self, days: int) -> dict[str, list[float]]:
+        """How long each gate held things, one entry per release.
+
+        Per GATE, never per person: the question a firm can act on is which
+        check is the bottleneck, not who was slowest to click it.
+        """
+        rows = self.db.execute(
+            "SELECT a.gate_id g,"
+            " (julianday(a.created_at) - julianday(m.fetched_at)) * 24 h"
+            " FROM approvals a JOIN messages m ON m.id = a.message_id"
+            " WHERE a.created_at >= datetime('now', ?)", (f"-{days} days",)).fetchall()
+        out: dict[str, list[float]] = {}
+        for r in rows:
+            if r["h"] is None:
+                continue
+            # Clamped at zero. A release timestamped before the message
+            # arrived is clock skew or a hand-edited row, not a gate that
+            # took negative time, and "-0.0 hours" on a report reads as a bug.
+            out.setdefault(r["g"], []).append(max(0.0, float(r["h"])))
+        return out
+
+    def adapter_counts(self, days: int, offset: int = 0) -> dict[str, int]:
+        """Notices per adapter in a window, optionally shifted back."""
+        start, end = f"-{days + offset} days", f"-{offset} days"
+        rows = self.db.execute(
+            "SELECT adapter, COUNT(*) n FROM notices"
+            " WHERE created_at >= datetime('now', ?)"
+            "   AND created_at <  datetime('now', ?)"
+            " GROUP BY adapter", (start, end)).fetchall()
+        return {r["adapter"]: r["n"] for r in rows}
+
+    def hold_reasons(self, days: int) -> list[tuple[str, str, int]]:
+        """(gate, summary, count) for what actually held messages up."""
+        rows = self.db.execute(
+            "SELECT gate_id g, summary s, COUNT(*) n FROM findings"
+            " WHERE severity='fail' AND created_at >= datetime('now', ?)"
+            " GROUP BY g, s ORDER BY n DESC", (f"-{days} days",)).fetchall()
+        return [(r["g"], r["s"], r["n"]) for r in rows]
+
+    def documents_not_held(self, days: int) -> int:
+        """Notices that named a document we have no copy of.
+
+        A link is not a document. This is the count of things the firm was
+        told about and cannot open without going and fetching them.
+        """
+        row = self.db.execute(
+            "SELECT COUNT(*) n FROM notices no"
+            " WHERE no.created_at >= datetime('now', ?)"
+            "   AND json_extract(no.fields_json, '$.document_link') IS NOT NULL"
+            "   AND NOT EXISTS (SELECT 1 FROM attachments a"
+            "                   WHERE a.message_id = no.message_id)",
+            (f"-{days} days",)).fetchone()
+        return row["n"]
+
+    def matters_by_age(self) -> list[tuple[str, str, float]]:
+        """(case_number, stage, days_since_last_move) — backlog, not failure."""
+        rows = self.db.execute(
+            "SELECT case_number, stage,"
+            " (julianday('now') - julianday(updated_at)) d"
+            " FROM matters ORDER BY d DESC").fetchall()
+        return [(r["case_number"], r["stage"], round(r["d"], 1)) for r in rows]
+
     # -- imap cursor -----------------------------------------------------
 
     # -- matters ---------------------------------------------------------
