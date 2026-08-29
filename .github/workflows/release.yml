@@ -23,7 +23,7 @@ jobs:
           python-version: "3.12"
       - name: Build single-file executable
         run: |
-          pip install pyinstaller pypdf python-docx eyecite httpx
+          pip install pyinstaller pypdf python-docx eyecite httpx openpyxl pytesseract Pillow
           pyinstaller --onefile --name docketry --collect-data reporters_db --collect-data courts_db docketry_app.py
       - name: Rename artifact
         shell: bash

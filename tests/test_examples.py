@@ -87,3 +87,39 @@ class TestNothingShipsWithoutEvals(unittest.TestCase):
             self.assertIn("type: tool_used", kinds,
                           f"{prompt.parent.name}: no grader checks what the"
                           " agent actually ran")
+
+
+class TestVersionDoesNotDrift(unittest.TestCase):
+    """One version, two files. They have to agree or a release lies.
+
+    pyproject drives what PyPI serves; __version__ drives what `--version`
+    prints. When they diverge, the number a user reports in an issue is not
+    the number that was published, and neither of you can tell.
+    """
+
+    def test_pyproject_and_dunder_version_match(self):
+        import re
+        import tomllib
+        root = SKILLS.parent
+        declared = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+        src = (root / "docketry" / "__init__.py").read_text()
+        dunder = re.search(r'__version__ = "([^"]+)"', src).group(1)
+        self.assertEqual(declared, dunder)
+
+    def test_every_shipped_feature_version_exists_by_the_current_release(self):
+        """FEATURES.md labels features with the version that carries them.
+
+        A feature marked SHIPPED v0.14 when the package says 0.1.0 means the
+        docs describe software nobody can install.
+        """
+        import re
+        import tomllib
+        root = SKILLS.parent
+        current = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+        cur = tuple(int(x) for x in current.split("."))
+        claimed = set(re.findall(r"SHIPPED v(\d+\.\d+)", (root / "FEATURES.md").read_text()))
+        for v in sorted(claimed):
+            parts = tuple(int(x) for x in v.split("."))
+            self.assertLessEqual(
+                parts, cur[:len(parts)],
+                f"FEATURES.md claims v{v} shipped but the package is {current}")
