@@ -514,7 +514,16 @@ def verify(pdf: str | Path, terms: list[str]) -> list[str]:
     for t in terms:
         wanted |= _tokens(t)
     if not wanted:
-        return []
+        # Every term was shorter than MIN_VERIFY_TOKEN, so there is nothing to
+        # look for. Returning "none found" here would be a clean bill of health
+        # on a check that never ran, which is the one thing this function
+        # exists to never do.
+        raise RedactionError(
+            f"nothing to check: every term given is shorter than"
+            f" {MIN_VERIFY_TOKEN} characters ({', '.join(terms)}). A term that"
+            " short would match half the document; give the actual value you"
+            " redacted."
+        )
     found = _tokens(extract_path(pdf, ocr="never").full_text)
     # The marker we inject is not a leak of the source document.
     return sorted((wanted & found) - _tokens(MARKER))

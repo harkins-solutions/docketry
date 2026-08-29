@@ -76,18 +76,28 @@ class Pipeline:
 
 
 class Runner:
-    def __init__(self, pipeline: Pipeline, store: st.Store):
+    def __init__(self, pipeline: Pipeline, store: st.Store, registry=None):
         self.pipeline = pipeline
         self.store = store
+        self.registry = registry
 
     # -- internals -------------------------------------------------------
     def _run_stage_gates(self, msg_id: int, stage: str, env: Envelope) -> str:
         """Run every gate bound to `stage`; return the resulting status."""
         status = st.OK
         for binding in self.pipeline.bindings_for(stage):
-            cleared = binding.authority in self.store.approval_roles(
-                msg_id, stage, binding.gate.id
-            )
+            approved = self.store.approval_roles(msg_id, stage, binding.gate.id)
+            if self.registry is None:
+                cleared = binding.authority in approved
+            else:
+                # With a registry, seniority works: a role whose may_release
+                # covers this gate can release it even though the gate names
+                # someone else. Without one, an attorney could not clear a
+                # hold marked for a paralegal, because this compared strings.
+                cleared = any(
+                    self.registry.can_release(r, binding.gate.id, binding.authority)
+                    for r in approved
+                )
             findings = binding.gate.check(env, binding.options)
             failed = False
             for f in findings:

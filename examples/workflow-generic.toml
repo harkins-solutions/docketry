@@ -1,0 +1,34 @@
+# A deliberately bare workflow. Docketry ships the SHAPE of a matter moving
+# through stages; how YOUR firm runs a case is yours to write here.
+#
+# This file exists to be copied and rewritten, not used as-is. The stages
+# below are the least opinionated set that still demonstrates a gate: nothing
+# about practice area, nothing about strategy, no deadlines. Replace all of it.
+#
+# Conditions read the record that is already there:
+#   document:<label>   a document classified as <label> is in the matter
+#   notice:<type>      service_notice | filing_receipt | hearing_notice
+#   field:<name>       a field is filled in on the matter
+#
+# `authority` names the role that must approve the move. Leave it out and the
+# move needs no approval; name a role and a person holding it has to release
+# the matter, and that release is recorded.
+
+[workflow]
+matter_type = "generic"
+stages = ["intake", "open", "active", "closed"]
+as_of = "2026-08-29"          # your date on your workflow; Docketry never edits it
+
+[[transition]]
+from = "intake"
+to = "open"
+requires = ["field:case_number"]
+
+[[transition]]
+from = "open"
+to = "active"
+
+[[transition]]
+from = "active"
+to = "closed"
+authority = "attorney"

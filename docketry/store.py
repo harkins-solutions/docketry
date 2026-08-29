@@ -73,6 +73,27 @@ CREATE TABLE IF NOT EXISTS classifications(
   applied_at TEXT,
   created_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS matters(
+  id INTEGER PRIMARY KEY,
+  case_number TEXT NOT NULL UNIQUE,      -- normalised; the join key everywhere
+  display_name TEXT NOT NULL DEFAULT '',
+  matter_type TEXT NOT NULL DEFAULT 'generic',
+  stage TEXT NOT NULL,
+  opened_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+-- Every stage change, kept forever. A matter's position is a claim about
+-- where the work stands, so how it got there has to be answerable.
+CREATE TABLE IF NOT EXISTS matter_events(
+  id INTEGER PRIMARY KEY,
+  matter_id INTEGER NOT NULL REFERENCES matters(id),
+  from_stage TEXT NOT NULL,
+  to_stage TEXT NOT NULL,
+  moved_by TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS imap_state(
   mailbox TEXT PRIMARY KEY,
   uidvalidity INTEGER,
@@ -324,6 +345,65 @@ class Store:
         }
 
     # -- imap cursor -----------------------------------------------------
+
+    # -- matters ---------------------------------------------------------
+    def open_matter(self, case_number: str, *, stage: str,
+                    display_name: str = "", matter_type: str = "generic") -> int:
+        """Create a matter, or return the existing one for this case number."""
+        existing = self.get_matter(case_number)
+        if existing:
+            return existing["id"]
+        now = utcnow()
+        with self.db:
+            cur = self.db.execute(
+                "INSERT INTO matters(case_number, display_name, matter_type,"
+                " stage, opened_at, updated_at) VALUES(?,?,?,?,?,?)",
+                (case_number, display_name, matter_type, stage, now, now),
+            )
+        return cur.lastrowid
+
+    def get_matter(self, case_number: str) -> sqlite3.Row | None:
+        return self.db.execute(
+            "SELECT * FROM matters WHERE case_number=?", (case_number,)
+        ).fetchone()
+
+    def list_matters(self, stage: str | None = None) -> list[sqlite3.Row]:
+        if stage:
+            return self.db.execute(
+                "SELECT * FROM matters WHERE stage=? ORDER BY updated_at DESC",
+                (stage,)).fetchall()
+        return self.db.execute(
+            "SELECT * FROM matters ORDER BY updated_at DESC").fetchall()
+
+    def move_matter(self, matter_id: int, to_stage: str, *, by: str,
+                    role: str = "", note: str = "") -> str:
+        """Record the move and the mover. Refuses an unattributed change.
+
+        The engine decides whether a move is allowed; this records that it
+        happened. Splitting the two is deliberate — nothing should be able to
+        shift a matter without leaving a name behind.
+        """
+        if not by.strip():
+            raise ValueError("a stage change must name who made it")
+        row = self.db.execute("SELECT * FROM matters WHERE id=?",
+                              (matter_id,)).fetchone()
+        if row is None:
+            raise ValueError(f"no matter {matter_id}")
+        now = utcnow()
+        with self.db:
+            self.db.execute(
+                "INSERT INTO matter_events(matter_id, from_stage, to_stage,"
+                " moved_by, role, note, at) VALUES(?,?,?,?,?,?,?)",
+                (matter_id, row["stage"], to_stage, by.strip(), role, note, now))
+            self.db.execute("UPDATE matters SET stage=?, updated_at=? WHERE id=?",
+                            (to_stage, now, matter_id))
+        return row["stage"]
+
+    def matter_events(self, matter_id: int) -> list[sqlite3.Row]:
+        return self.db.execute(
+            "SELECT * FROM matter_events WHERE matter_id=? ORDER BY id",
+            (matter_id,)).fetchall()
+
     def imap_cursor(self, mailbox: str) -> tuple[int | None, int]:
         row = self.db.execute(
             "SELECT uidvalidity, last_uid FROM imap_state WHERE mailbox=?", (mailbox,)

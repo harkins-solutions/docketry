@@ -16,6 +16,7 @@ def _sev(marker: str) -> str:
 import getpass
 import json
 import sys
+import tomllib
 from pathlib import Path
 
 from . import __version__
@@ -29,11 +30,25 @@ from .pipeline import GateRefusal, Runner
 from .store import Store
 
 
+def _registry(home):
+    """The firm's role registry, when it has written one."""
+    from .roles import RoleError, load_if_present
+    try:
+        return load_if_present(home)
+    except RoleError as e:
+        sys.exit(f"roles.toml refused: {e}")
+
+
 def _open(home: str):
     cfg = load_home(home)
     if not cfg.manifest_path.exists():
         sys.exit(f"no {MANIFEST_NAME} in {home} — run: docketry init")
-    pipeline = load_manifest(cfg.manifest_path)
+    registry = _registry(cfg.home)
+    try:
+        pipeline = load_manifest(cfg.manifest_path, registry)
+    except Exception as e:
+        sys.exit(f"{cfg.manifest_path.name} refused: {e}")
+    cfg.registry = registry
     return cfg, pipeline, Store(cfg.store_path)
 
 
@@ -149,12 +164,15 @@ def cmd_approve(args) -> None:
 
 def cmd_advance(args) -> None:
     _, pipeline, store = _open(args.home)
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=_registry(args.home))
     try:
         status = runner.advance(args.message)
         print(f"message {args.message} -> {status}")
     except GateRefusal as e:
         sys.exit(str(e))
+    except KeyError:
+        sys.exit(f"no message {args.message} — `docketry queue` lists the ones"
+                 " waiting, with their numbers")
 
 
 def cmd_notices(args) -> None:
@@ -363,6 +381,157 @@ def cmd_llm_check(args) -> None:
           " classifies, or decides what to redact")
 
 
+
+def _article(word):
+    from .workflow import article
+    return article(word)
+
+
+def _matter_or_exit(store, case):
+    from .timeline import normalise_case_number
+    row = store.get_matter(normalise_case_number(case))
+    if row is None:
+        sys.exit(f"no matter for {case} — open it with: docketry matter-open {case}")
+    return row
+
+
+def cmd_matters(args) -> None:
+    _, _, store = _open(args.home)
+    rows = store.list_matters(args.stage)
+    if not rows:
+        print("no matters yet")
+        return
+    for r in rows:
+        name = r["display_name"] or "(unnamed)"
+        print(f"  {r['stage'].ljust(12)} {r['case_number'].ljust(18)}"
+              f" {r['matter_type'].ljust(10)} {name}")
+    print(f"\n{len(rows)} matter(s)")
+
+
+def cmd_matter_open(args) -> None:
+    from .timeline import normalise_case_number
+    from .workflow import WorkflowError, workflow_for
+    cfg, _, store = _open(args.home)
+    try:
+        wf = workflow_for(cfg.home, args.type, cfg.registry)
+    except WorkflowError as e:
+        sys.exit(str(e))
+    case = normalise_case_number(args.case)
+    mid = store.open_matter(case, stage=wf.first_stage,
+                            display_name=args.name or "", matter_type=args.type)
+    row = store.get_matter(case)
+    print(f"matter {mid}: {case} ({args.type}) at stage '{row['stage']}'")
+
+
+def cmd_matter_status(args) -> None:
+    from .workflow import WorkflowError, available, facts_from_store, workflow_for
+    cfg, _, store = _open(args.home)
+    row = _matter_or_exit(store, args.case)
+    try:
+        wf = workflow_for(cfg.home, row["matter_type"], cfg.registry)
+    except WorkflowError as e:
+        sys.exit(str(e))
+    facts = facts_from_store(store, row["case_number"])
+    print(f"{row['case_number']} ({row['matter_type']}) — stage"
+          f" '{row['stage']}'{(' · ' + row['display_name']) if row['display_name'] else ''}")
+    for b in available(wf, row["stage"], facts):
+        if not b.reasons and not b.needs_authority:
+            print(_sev("  ok") + f"  can move to '{b.target}' now")
+            continue
+        print(_sev("warn") + f"  held out of '{b.target}':")
+        for reason in b.reasons:
+            print(f"      {reason}")
+        if b.needs_authority:
+            print(f"      needs {_article(b.needs_authority)}"
+                  f" {b.needs_authority} to release it")
+    events = store.matter_events(row["id"])
+    if events:
+        last = events[-1]
+        print(f"  last moved {last['from_stage']} -> {last['to_stage']}"
+              f" by {last['moved_by']} on {last['at'][:10]}")
+
+
+def cmd_matter_advance(args) -> None:
+    from .workflow import WorkflowError, check, facts_from_store, workflow_for
+    cfg, _, store = _open(args.home)
+    row = _matter_or_exit(store, args.case)
+    try:
+        wf = workflow_for(cfg.home, row["matter_type"], cfg.registry)
+    except WorkflowError as e:
+        sys.exit(str(e))
+    facts = facts_from_store(store, row["case_number"])
+    blocked = check(wf, row["stage"], args.to, facts)
+    if blocked is not None:
+        if blocked.reasons:
+            print(_sev("FAIL") + f"  cannot move to '{args.to}':")
+            for reason in blocked.reasons:
+                print(f"      {reason}")
+            sys.exit(1)
+        if blocked.needs_authority and args.role != blocked.needs_authority:
+            print(_sev("FAIL") + f"  '{args.to}' must be released by"
+                  f" {_article(blocked.needs_authority)}"
+                  f" {blocked.needs_authority}; --role said '{args.role}'")
+            sys.exit(1)
+    was = store.move_matter(row["id"], args.to, by=args.by, role=args.role,
+                            note=args.note or "")
+    print(_sev("  ok") + f"  {row['case_number']}: {was} -> {args.to}"
+          f" (recorded: {args.by}{', ' + args.role if args.role else ''})")
+
+
+def cmd_workflow_check(args) -> None:
+    """The sandbox: run a workflow and watch where it holds."""
+    from .workflow import MatterFacts, WorkflowError, load_workflow, simulate
+    try:
+        wf = load_workflow(args.file)
+    except WorkflowError as e:
+        sys.exit(str(e))
+    facts = MatterFacts(
+        documents=set(args.document or []),
+        notices=set(args.notice or []),
+        fields=set(args.field or []),
+    )
+    print(f"{wf.matter_type}: {' -> '.join(wf.stages)}"
+          f"{'   (as of ' + wf.as_of + ')' if wf.as_of else ''}")
+    path, blocked = simulate(wf, facts)
+    print("  reached: " + " -> ".join(path))
+    if blocked is None:
+        print(_sev("warn") + "  ran to the end with nothing stopping it —"
+              " check that is what you meant")
+        return
+    print(_sev("warn") + f"  holds before '{blocked.target}':")
+    for reason in blocked.reasons:
+        print(f"      {reason}")
+    if blocked.needs_authority:
+        print(f"      needs {_article(blocked.needs_authority)}"
+              f" {blocked.needs_authority} to release it")
+
+
+
+def cmd_roles(args) -> None:
+    cfg, _, _ = _open(args.home)
+    reg = cfg.registry
+    if reg is None:
+        print("no roles.toml — authority values in your guardrails and"
+              " workflows are NOT checked")
+        print("to declare them, copy examples/roles.toml into"
+              f" {cfg.home}/roles.toml")
+        return
+    for name in reg.names():
+        role = reg.roles[name]
+        releases = ", ".join(role.may_release) or "only holds marked for it"
+        print(f"  {name.ljust(14)} releases: {releases}")
+        if role.description:
+            print(f"                 {role.description}")
+    if reg.people:
+        print()
+        for person, held in sorted(reg.people.items()):
+            print(f"  {person}: {', '.join(held)}")
+    else:
+        print("\n  no people listed — any name may claim any declared role")
+    print("\na role here is recorded against a name, not authenticated:"
+          " it catches mistakes, not lies")
+
+
 def cmd_verify_draft(args) -> None:
     from .cite import CiteError, verify, extract_citations
     from .extract import ExtractionError, extract_path
@@ -436,13 +605,30 @@ def cmd_classify(args) -> None:
     from .classify import classify
     from .extract import ExtractionError, extract_path
 
-    text = ""
+    path = Path(args.file)
+    text, degraded = "", ""
+    if not path.exists():
+        # Naming a document you were told about, without having it, is a real
+        # way people use this. Classify the title, and say plainly that is all
+        # that happened.
+        degraded = "there is no file at that path"
     try:
-        text = extract_path(args.file).full_text
-    except ExtractionError:
-        pass  # title-only classification still works
-    label, tier = classify(Path(args.file).stem, text)
+        text = extract_path(path).full_text if not degraded else ""
+    except ExtractionError as e:
+        # A file whose text cannot be read can still be classified from its
+        # title, and often correctly. What must not happen is presenting that
+        # as an ordinary result: the classifier never saw the document, and
+        # whoever reads this needs to know which of the two it was.
+        degraded = str(e)
+
+    label, tier = classify(path.stem, text)
     print(f"{label} ({tier})")
+    if degraded:
+        print(_sev("warn") + f"  classified from the FILENAME only — the text"
+              f" could not be read: {degraded}")
+    elif not text.strip():
+        print(_sev("warn") + "  classified from the FILENAME only — the file"
+              " yielded no text")
 
 
 def cmd_class_queue(args) -> None:
@@ -458,7 +644,11 @@ def cmd_class_queue(args) -> None:
 
 def cmd_class_apply(args) -> None:
     _, _, store = _open(args.home)
-    outcome = store.apply_classification(args.id, by=args.by, role=args.role)
+    try:
+        outcome = store.apply_classification(args.id, by=args.by, role=args.role)
+    except KeyError:
+        sys.exit(f"no staged proposal {args.id} — `docketry class-queue` lists"
+                 " them with their numbers")
     print(outcome)
 
 
@@ -466,7 +656,8 @@ def cmd_ui(args) -> None:
     from .webui import make_server
     cfg, pipeline, store = _open(args.home)
     store.close()
-    server = make_server(cfg.store_path, pipeline, port=args.port)
+    server = make_server(cfg.store_path, pipeline, port=args.port,
+                         home=cfg.home)
     print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()
@@ -555,6 +746,11 @@ def cmd_doctor(args) -> None:
         report("WARN", "COURTLISTENER_TOKEN not set — verify-draft runs extraction-only")
     # Say plainly whether anything here can reach off this network. A promise
     # the operator can check beats one they have to take on faith.
+    reg = _registry(cfg.home) if cfg.manifest_path.exists() else None
+    if reg is not None:
+        report("PASS", f"roles declared: {', '.join(reg.names())}")
+    else:
+        report("WARN", "no roles.toml — authority values are not checked")
     if cfg.llm is not None:
         from .llm import probe
         result = probe(cfg.llm)
@@ -741,6 +937,26 @@ def cmd_status(args) -> None:
         print(f"{status:15} {n}")
 
 
+
+def _user_errors():
+    """Errors that mean the user's config or input is wrong, not that we broke.
+
+    These get one clean sentence and a non-zero exit. Anything NOT in this
+    tuple keeps its traceback on purpose: an unexpected crash is a bug in
+    Docketry, and swallowing it into a tidy message is how bugs go unreported.
+    """
+    from .cite import CiteError
+    from .extract import ExtractionError
+    from .llm import LLMError
+    from .manifest import ManifestError
+    from .notices import AdapterError
+    from .redact import RedactionError
+    from .roles import RoleError
+    from .workflow import WorkflowError
+    return (AdapterError, CiteError, ExtractionError, LLMError, ManifestError,
+            RedactionError, RoleError, WorkflowError)
+
+
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(prog="docketry", description="Local gate-enforced email port")
     p.add_argument("--home", default="./docketry-home", help="installation directory")
@@ -786,6 +1002,38 @@ def main(argv=None) -> None:
                         help="restrict to these layers; repeatable")
         sp.add_argument("--in-thread", help="only entries in this thread")
         return sp
+
+    sp = sub.add_parser("roles", help="who may release what")
+    sp.set_defaults(fn=cmd_roles)
+
+    sp = sub.add_parser("matters", help="matters and the stage each one is at")
+    sp.add_argument("--stage")
+    sp.set_defaults(fn=cmd_matters)
+
+    sp = sub.add_parser("matter-open", help="start tracking a matter")
+    sp.add_argument("case")
+    sp.add_argument("--type", default="generic", help="matter type (picks the workflow)")
+    sp.add_argument("--name", help="how the firm refers to it")
+    sp.set_defaults(fn=cmd_matter_open)
+
+    sp = sub.add_parser("matter-status", help="where a matter is and what it is waiting on")
+    sp.add_argument("case")
+    sp.set_defaults(fn=cmd_matter_status)
+
+    sp = sub.add_parser("matter-advance", help="move a matter to the next stage")
+    sp.add_argument("case")
+    sp.add_argument("to", help="stage to move it to")
+    sp.add_argument("--by", required=True, help="who is making this change")
+    sp.add_argument("--role", default="", help="the role they hold")
+    sp.add_argument("--note")
+    sp.set_defaults(fn=cmd_matter_advance)
+
+    sp = sub.add_parser("workflow-check", help="run a workflow and see where it holds")
+    sp.add_argument("file")
+    sp.add_argument("--document", action="append", help="pretend this doc type exists")
+    sp.add_argument("--notice", action="append")
+    sp.add_argument("--field", action="append")
+    sp.set_defaults(fn=cmd_workflow_check)
 
     sp = sub.add_parser("llm-check", help="is a local model configured, reachable, and local")
     sp.set_defaults(fn=cmd_llm_check)
@@ -876,7 +1124,23 @@ def main(argv=None) -> None:
     sp.set_defaults(fn=cmd_status)
 
     args = p.parse_args(argv)
-    args.fn(args)
+    try:
+        args.fn(args)
+    except _user_errors() as e:
+        # Loud, and a sentence rather than a stack trace: the message from
+        # each of these already says what is wrong and what to do about it.
+        sys.exit(str(e))
+    except tomllib.TOMLDecodeError as e:
+        # The likeliest failure of all, because these files are hand-edited.
+        sys.exit(f"that file is not valid TOML: {e}")
+    except FileNotFoundError as e:
+        sys.exit(f"no such file: {e.filename}")
+    except IsADirectoryError as e:
+        sys.exit(f"that is a directory, not a file: {e.filename}")
+    except PermissionError as e:
+        sys.exit(f"no permission to read {e.filename}")
+    except KeyboardInterrupt:
+        sys.exit("\nstopped")
 
 
 if __name__ == "__main__":

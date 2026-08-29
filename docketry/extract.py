@@ -70,9 +70,32 @@ def _require(module: str, extra: str):
         ) from None
 
 
+def _open_pdf(path: Path):
+    """Open a PDF, turning the library's own failures into ours.
+
+    A truncated or corrupt PDF is an ordinary thing to receive in a mailbox,
+    and pypdf signals it with its own exception types. Letting those escape
+    means every caller either crashes or has to know pypdf's error classes;
+    wrapping them here means one message, in our vocabulary, everywhere.
+    """
+    pypdf = _require("pypdf", "pdf")
+    # pypdf narrates its way through a damaged file on its own logger
+    # ("invalid pdf header", "EOF marker not found") before raising. Ours is
+    # the message that says what to do, so it should not arrive third.
+    import logging
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    try:
+        return pypdf.PdfReader(str(path))
+    except Exception as e:
+        raise ExtractionError(
+            f"{path.name} could not be read as a PDF ({type(e).__name__}:"
+            f" {e}). It may be truncated, encrypted, or not a PDF at all."
+        ) from None
+
+
 def _extract_pdf(path: Path, *, ocr: str) -> Extraction:
     pypdf = _require("pypdf", "pdf")
-    reader = pypdf.PdfReader(str(path))
+    reader = _open_pdf(path)
     pages: list[Page] = []
     warnings: list[str] = []
     empty = 0
@@ -143,7 +166,13 @@ def _ocr_pdf(path: Path) -> Extraction:
 
 def _extract_docx(path: Path) -> Extraction:
     docx = _require("docx", "docx")
-    document = docx.Document(str(path))
+    try:
+        document = docx.Document(str(path))
+    except Exception as e:
+        raise ExtractionError(
+            f"{path.name} could not be read as a Word document"
+            f" ({type(e).__name__}: {e})."
+        ) from None
     parts = [p.text for p in document.paragraphs if p.text.strip()]
     for table in document.tables:
         for row in table.rows:
@@ -159,7 +188,10 @@ def _extract_docx(path: Path) -> Extraction:
 
 
 def _extract_txt(path: Path) -> Extraction:
-    text = path.read_bytes().decode("utf-8", "replace")
+    try:
+        text = path.read_bytes().decode("utf-8", "replace")
+    except OSError as e:
+        raise ExtractionError(f"{path.name} could not be read: {e}") from None
     return Extraction(pages=[Page(number=1, text=text, method="text")], method="text")
 
 

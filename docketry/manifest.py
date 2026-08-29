@@ -42,12 +42,12 @@ class ManifestError(ValueError):
     pass
 
 
-def load_manifest(path: str | Path) -> Pipeline:
+def load_manifest(path: str | Path, registry=None) -> Pipeline:
     data = tomllib.loads(Path(path).read_text())
-    return build_pipeline(data)
+    return build_pipeline(data, registry)
 
 
-def build_pipeline(data: dict) -> Pipeline:
+def build_pipeline(data: dict, registry=None) -> Pipeline:
     stages = data.get("pipeline", {}).get("stages", [])
     if not stages or not all(isinstance(s, str) and s for s in stages):
         raise ManifestError("[pipeline].stages must be a non-empty list of stage names")
@@ -93,12 +93,18 @@ def build_pipeline(data: dict) -> Pipeline:
             if problems:
                 raise ManifestError(f"gate '{gid}' options invalid: {'; '.join(problems)}")
 
+        authority = g.get("authority", "attorney")
+        if registry is not None:
+            # Caught here, where it is cheap. A gate naming a role nobody
+            # declared fails closed at the moment someone needs to release it,
+            # which is the worst possible time to discover a typo.
+            registry.check_authority(f"gate '{gate.id}'", authority)
         bindings.append(
             GateBinding(
                 gate=gate,
                 binds_to=list(binds_to),
                 on_fail=on_fail,
-                authority=g.get("authority", "attorney"),
+                authority=authority,
                 options=g.get("options", {}),
             )
         )

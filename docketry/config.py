@@ -30,6 +30,8 @@ class HomeConfig:
     store_path: Path
     # None unless the firm configured a model. Nothing calls one by default.
     llm: LLMConfig | None = None
+    # Filled in by the CLI once roles.toml has been read.
+    registry: object | None = None
 
 
 def write_config(
