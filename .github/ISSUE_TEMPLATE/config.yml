@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Something went wrong with a real client's file
+    url: mailto:Joshua@HarkinsSolutionsSystemsGroup.com
+    about: >-
+      Do not open a public issue. Email us — you do not need a GitHub account,
+      and nothing about a client belongs in a tracker that is indexed and
+      forked forever.
+  - name: Report a vulnerability privately
+    url: https://github.com/harkins-solutions/docketry/security/advisories/new
+    about: Opens a report only the maintainers can read.

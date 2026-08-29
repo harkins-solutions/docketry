@@ -123,3 +123,71 @@ class TestVersionDoesNotDrift(unittest.TestCase):
             self.assertLessEqual(
                 parts, cur[:len(parts)],
                 f"FEATURES.md claims v{v} shipped but the package is {current}")
+
+
+class TestIssueTemplatesGuardClientData(unittest.TestCase):
+    """A legal tool's public tracker will receive client data unless the form
+    actively stops it. These warnings are the control, so they are asserted
+    rather than trusted to survive an edit.
+
+    Checked by reading the files rather than parsing them: Docketry's core is
+    stdlib-only and adding a YAML parser to lint four config files would be a
+    poor trade. GitHub silently ignores a malformed template, so the shape
+    checks below are deliberately about the keys that make it load at all.
+    """
+
+    TEMPLATES = SKILLS.parent / ".github" / "ISSUE_TEMPLATE"
+
+    def _forms(self):
+        return [f for f in sorted(self.TEMPLATES.glob("*.yml"))
+                if f.name != "config.yml"]
+
+    def test_there_are_forms_at_all(self):
+        self.assertTrue(self._forms(), "no issue forms — reports arrive shapeless")
+
+    def test_each_form_declares_what_github_needs_to_render_it(self):
+        for f in self._forms():
+            text = f.read_text()
+            for key in ("name:", "description:", "body:"):
+                self.assertIn(key, text, f"{f.name} is missing {key}")
+
+    def test_every_form_that_asks_for_a_paste_warns_it_is_public(self):
+        for f in self._forms():
+            if f.name == "feature_request.yml":
+                continue
+            self.assertIn("public", f.read_text().lower(),
+                          f"{f.name}: nothing warns the reporter this is public")
+
+    def test_the_adapter_form_does_not_ask_for_a_real_notice(self):
+        text = (self.TEMPLATES / "adapter_not_parsing.yml").read_text().lower()
+        self.assertIn("do not paste a real notice", text)
+        # And it points at the tool that can blank one.
+        self.assertIn("redact-apply", text)
+
+    def test_forms_that_invite_a_document_explain_the_unverifiable_state(self):
+        """Telling someone to redact is not enough on its own. A box over a
+        signature destroys the pixels but proves nothing, and that is exactly
+        the page somebody would send without looking."""
+        for name in ("adapter_not_parsing.yml", "bug_report.yml"):
+            text = (self.TEMPLATES / name).read_text().lower()
+            self.assertIn("redact-apply", text, name)
+            self.assertIn("unverifiable", text, name)
+
+    def test_blank_issues_are_off_so_the_forms_are_not_bypassed(self):
+        cfg = (self.TEMPLATES / "config.yml").read_text()
+        self.assertIn("blank_issues_enabled: false", cfg)
+
+    def test_security_policy_says_where_client_data_goes_instead(self):
+        sec = (SKILLS.parent / "SECURITY.md").read_text().lower()
+        self.assertIn("do not open an issue", sec)
+        # Routes that exist. An invented address is worse than none: the
+        # report goes nowhere and the reporter thinks they have told you.
+        self.assertIn("security/advisories/new", sec)
+        self.assertIn("harkinssolutionssystemsgroup.com", sec)
+
+    def test_reporting_does_not_require_a_github_account(self):
+        """Most of the people who would need this route are lawyers, not
+        GitHub users. Making an account to report that a redaction failed on
+        a client's file is a barrier in exactly the wrong place."""
+        cfg = (self.TEMPLATES / "config.yml").read_text().lower()
+        self.assertIn("mailto:", cfg)
