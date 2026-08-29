@@ -14,6 +14,7 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
+from .llm import LLMConfig
 from .mailbox import MailboxConfig
 
 CONFIG_NAME = "config.toml"
@@ -27,6 +28,8 @@ class HomeConfig:
     mailbox: MailboxConfig | None
     manifest_path: Path
     store_path: Path
+    # None unless the firm configured a model. Nothing calls one by default.
+    llm: LLMConfig | None = None
 
 
 def write_config(
@@ -57,6 +60,7 @@ def load_home(home: str | Path) -> HomeConfig:
     home = Path(home)
     cfg_path = home / CONFIG_NAME
     mailbox = None
+    llm = None
     if cfg_path.exists():
         data = tomllib.loads(cfg_path.read_text())
         mb = data.get("mailbox", {})
@@ -69,9 +73,19 @@ def load_home(home: str | Path) -> HomeConfig:
                 folder=mb.get("folder", "INBOX"),
                 port=int(mb.get("port", 993)),
             )
+        ml = data.get("llm", {})
+        if ml.get("base_url") and ml.get("model"):
+            # Not validated here: an unreachable or public endpoint must be
+            # reported by `doctor`, not raised while merely reading config.
+            llm = LLMConfig(
+                base_url=ml["base_url"],
+                model=ml["model"],
+                timeout=float(ml.get("timeout", 120.0)),
+            )
     return HomeConfig(
         home=home,
         mailbox=mailbox,
         manifest_path=home / MANIFEST_NAME,
         store_path=home / STORE_DIR,
+        llm=llm,
     )

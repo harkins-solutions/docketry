@@ -152,6 +152,32 @@ disclaimer on their own face.
   the reconciliation are stdlib.
 
 >>>>>>> Stashed changes
+### F13 — Bring your own model (local only) — SHIPPED v0.11
+An optional `[llm]` block pointing at a model the firm runs itself. The
+endpoint is validated before any request is built and refused unless it
+resolves entirely to loopback or private-range addresses — "local only" is a
+check, not a paragraph in the README, and a hostname that resolves to both a
+private and a public address is refused too. `doctor` and `llm-check` state
+plainly whether anything can reach off the network. Speaks the
+OpenAI-compatible chat API, so Ollama, llama.cpp, vLLM and LM Studio all work
+through one code path. A model PROPOSES: nothing here releases a hold,
+approves, classifies, or decides what to redact, and a grep-enforced test
+keeps models out of the gates, the pipeline runner and the redaction path.
+Every proposal carries its endpoint, model name and prompt hash.
+Any model the server can load works without a code change: Qwen, DeepSeek,
+Gemma, Llama, Mistral — the model name is a config string, not an adapter.
+Reasoning models are handled rather than mangled: `<think>` blocks and a
+`reasoning_content` field are both split off the answer and kept separately,
+because a model's narration pasted into a case file reads as its conclusion,
+and a response that is ALL reasoning is an error rather than an empty answer.
+
+Docketry ships no weights and endorses no model. Licences differ and are the
+firm's to check — DeepSeek-R1 is MIT and most Qwen releases are Apache-2.0,
+while Gemma is open-weight under Google's own terms rather than an OSI licence,
+and terms change between releases.
+- Internal: F1 (config); consumers to be decided feature by feature.
+- External: none — stdlib `urllib`. No provider SDK, no new dependency.
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -164,7 +190,7 @@ F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
 <<<<<<< Updated upstream
 F4 -> F9 -> F8 -> F11 -> F7 -> F10.
 =======
-F4 -> F9 -> F8 -> F11 -> F12 -> F7 -> F10.
+F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F7 -> F10.
 >>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the
