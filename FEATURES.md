@@ -216,6 +216,14 @@ Where the volume came from (by sender domain, split internal/external once
 `[firm] domains` is set), how long each GATE held things (median and slowest
 tenth, not a mean that hides the bad days), and what actually held them up.
 
+Announcements and conversations are counted apart. E-service notices, NEFs and
+court calendaring mail are one-way: nobody replies to them, so nothing
+conversational is measured against them and their volume does not bury the
+handful of messages someone actually has to answer. A source is one-way when it
+says so in its headers (Auto-Submitted, Precedence, List-Id, captured at ingest
+because they cannot be recovered later), when an adapter recognised its mail as
+a court notice, or when the address is a noreply.
+
 Its real value is the two kinds of rot nobody notices by hand: a gate that has
 been configured for months and has never once fired, and an adapter that
 matched forty notices last month and none since — which means that court

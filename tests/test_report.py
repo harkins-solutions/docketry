@@ -135,3 +135,62 @@ class TestDurationsAreSane(unittest.TestCase):
         self.assertTrue(all(h >= 0 for h in hours), hours)
         rep = build(store, days=30)
         self.assertGreaterEqual(rep.turnaround["sender-scope"]["p50"], 0)
+
+
+def _msg_h(msgid, frm, headers=""):
+    raw = (f"From: {frm}\r\nTo: firm@example.com\r\nSubject: s\r\n"
+           f"Message-ID: <{msgid}>\r\n{headers}\r\n\r\nbody").encode()
+    return parse_message(raw, source="intake", fetched_at="now")
+
+
+class TestOneWaySourcesAreCountedApart(unittest.TestCase):
+    """E-service announces; opposing counsel converses. Not the same work."""
+
+    def setUp(self):
+        self.store = Store(tempfile.mkdtemp())
+
+    def _add(self, msgid, frm, headers="", notice=False):
+        mid = self.store.ingest(_msg_h(msgid, frm, headers), first_stage="ingest")
+        if notice:
+            self.store.add_notice(mid, "pacer-nef", "service_notice", {}, [])
+        return mid
+
+    def test_a_noreply_address_is_a_notification(self):
+        self._add("a@x", "noreply@stlucieclerk.com")
+        rep = build(self.store, days=30)
+        self.assertEqual(rep.notifications, [("stlucieclerk.com", 1)])
+        self.assertEqual(rep.correspondence, [])
+
+    def test_a_declared_auto_submitted_header_is_enough(self):
+        self._add("b@x", "eservice@myflcourtaccess.com",
+                  "Auto-Submitted: auto-generated\r\n")
+        self.assertEqual(build(self.store, days=30).notifications,
+                         [("myflcourtaccess.com", 1)])
+
+    def test_being_parsed_as_a_court_notice_is_enough(self):
+        # No noreply in the address, no headers — but an adapter knew it.
+        self._add("c@x", "clerk@uscourts.gov", notice=True)
+        rep = build(self.store, days=30)
+        self.assertEqual(rep.notifications, [("uscourts.gov", 1)])
+        self.assertEqual(rep.correspondence, [])
+
+    def test_a_person_writing_to_you_is_correspondence(self):
+        self._add("d@x", "rgarza@opposingfirm.com")
+        rep = build(self.store, days=30)
+        self.assertEqual(rep.correspondence, [("opposingfirm.com", 1)])
+        self.assertEqual(rep.notifications, [])
+
+    def test_volume_from_announcements_does_not_bury_the_real_mail(self):
+        for i in range(40):
+            self._add(f"n{i}@x", "noreply@court.gov")
+        self._add("real@x", "oc@otherfirm.com")
+        rep = build(self.store, days=30)
+        # The one message a person must answer is not lost behind forty.
+        self.assertEqual(rep.correspondence, [("otherfirm.com", 1)])
+        self.assertEqual(rep.notifications, [("court.gov", 40)])
+        self.assertEqual(dict(rep.by_domain)["court.gov"], 40)
+
+    def test_a_list_id_marks_a_one_way_source(self):
+        self._add("e@x", "digest@barassociation.org", "List-Id: <news.bar>\r\n")
+        self.assertEqual(build(self.store, days=30).notifications,
+                         [("barassociation.org", 1)])
