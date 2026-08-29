@@ -1,0 +1,19 @@
+name: Something is missing
+description: A change to what Docketry does.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >
+        The situation rather than the feature, if you can. Docketry deliberately
+        does not do some things — no billing, no calendar, no legal advice, and
+        it never keeps a rules or case-law corpus current — so the shape of the
+        problem matters more than the shape of the fix.
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What do you do about it today

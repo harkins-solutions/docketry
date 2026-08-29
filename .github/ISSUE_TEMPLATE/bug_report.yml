@@ -1,0 +1,55 @@
+name: Something is broken
+description: Docketry did the wrong thing, or stopped.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This tracker is public and permanent.** Anything pasted here is
+        indexed, forked and cached; deleting it later does not undo that.
+
+        Docketry runs on your machine, so nothing has reached us unless you
+        put it here. Please keep it that way — replace client names, case
+        numbers and addresses before you paste. If a real document is the
+        only way to show the problem, don't attach it; say so and we'll work
+        out something else.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got instead.
+      placeholder: |
+        I ran: docketry redact-apply notice.pdf out.pdf --term "..."
+        I expected: ...
+        Instead: ...
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Output of `docketry doctor`
+      description: >
+        This answers most environment questions at once. It prints the path to
+        your Docketry home — if that path contains a client or matter name,
+        edit it out.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - pip install docketry
+        - Downloaded the release binary
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`docketry --version`"
+      placeholder: "docketry 0.15.1"
+    validations:
+      required: true

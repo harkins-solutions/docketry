@@ -1,0 +1,51 @@
+name: A court's notices are not being parsed
+description: Docketry does not recognise mail from a court or filing system.
+labels: ["adapter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not paste a real notice.** This tracker is public and permanent,
+        and a real one carries a case number, the parties and often an address.
+
+        You do not need a real one. Adapters match on **format** — labels,
+        the sender's domain, the shape of the subject line. A notice you have
+        retyped with invented names and numbers, keeping the layout exactly as
+        it came, reproduces the problem just as well and is safer for both of
+        us.
+
+        If you would rather work from the real thing, Docketry can blank it
+        for you first:
+
+        ```
+        docketry redact-scan notice.pdf --term "Client Name" --term "26-CA-000123"
+        docketry redact-apply notice.pdf safe.pdf --term "Client Name" --term "26-CA-000123"
+        ```
+
+        You may also be able to fix this yourself without waiting: the
+        **Court adapters** panel in `docketry ui` takes a pasted notice, finds
+        its fields and writes the adapter for you. An issue is still welcome —
+        if your court is not covered, it probably is not covered for others.
+  - type: input
+    id: court
+    attributes:
+      label: Which court or system
+      placeholder: "e.g. a county clerk's e-service, a state e-filing portal"
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: A de-identified notice
+      description: >
+        The layout as it arrives, with invented names, numbers and dates.
+        Include the sender's domain and the subject line — those are what the
+        matching keys on.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have been picked out of it
+      placeholder: "case number, hearing date, the document names"
