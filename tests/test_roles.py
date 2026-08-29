@@ -15,12 +15,12 @@ def _roles(body: str) -> Path:
 
 
 class TestLoad(unittest.TestCase):
-    def test_the_shipped_example_loads_and_names_no_real_firm(self):
+    def test_the_shipped_example_loads_and_lists_no_real_people(self):
         reg = load_roles(EXAMPLE)
         self.assertEqual(reg.names(), ["attorney", "paralegal"])
-        text = EXAMPLE.read_text().lower()
-        for leaked in ("candice", "colucci", "of record", "level ii"):
-            self.assertNotIn(leaked, text)
+        # Roles are job titles, which are generic. PEOPLE are not, so the
+        # shipped file must never arrive with anyone in it.
+        self.assertEqual(reg.people, {})
 
     def test_an_empty_file_is_refused_rather_than_silently_permissive(self):
         with self.assertRaises(RoleError) as ctx:
