@@ -87,6 +87,25 @@ class Envelope:
     raw_sha256: str
     source: str          # intake mailbox this arrived through
     fetched_at: str      # ISO 8601, stamped by the port
+    # Threading. Captured at ingest because they cannot be recovered later:
+    # a message stored without them can only ever be threaded by subject and
+    # participant guesswork, which is materially worse. Cheap now, impossible
+    # to backfill.
+    in_reply_to: str = ""
+    references: list[str] = field(default_factory=list)
+
+    @property
+    def thread_key(self) -> str:
+        """Stable id for the conversation this message belongs to.
+
+        The first entry in References is the root of the thread; failing that
+        In-Reply-To names our parent; failing both, a message is its own
+        thread root. This is the real header chain, not a subject match —
+        subjects get edited, forwarded and reused across unrelated matters.
+        """
+        if self.references:
+            return self.references[0]
+        return self.in_reply_to or self.message_id
 
     def to_record(self) -> dict:
         """JSON-safe form; attachment bytes are stored on disk, not in the row."""
@@ -94,6 +113,13 @@ class Envelope:
         for a in d["attachments"]:
             a.pop("content", None)
         return d
+
+
+def _msgids(value: str | None) -> list[str]:
+    """Message-ids out of a References/In-Reply-To header, in order."""
+    if not value:
+        return []
+    return [m.strip("<>") for m in re.findall(r"<[^<>@\s]+@[^<>\s]+>", value)]
 
 
 def _addresses(msg: EmailMessage, header: str) -> list[str]:
@@ -163,4 +189,6 @@ def parse_message(raw: bytes, *, source: str, fetched_at: str) -> Envelope:
         raw_sha256=raw_sha,
         source=source,
         fetched_at=fetched_at,
+        in_reply_to=(msg.get("In-Reply-To") or "").strip().strip("<>"),
+        references=_msgids(msg.get("References")),
     )

@@ -16,8 +16,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      # The redaction path is the destructive one, so CI runs it for real
+      # rather than skipping it: without these the OCR tests skip and the
+      # only feature that can leak a client's data goes unexercised.
+      - name: Install OCR toolchain
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq tesseract-ocr poppler-utils
       - name: Install feature extras
-        run: pip install pypdf python-docx eyecite httpx coverage
+        run: pip install pypdf python-docx eyecite httpx coverage openpyxl pytesseract Pillow
       - name: Run tests with coverage
         env:
           DOCKETRY_LEAK_SALT: ${{ secrets.DOCKETRY_LEAK_SALT }}

@@ -46,7 +46,13 @@ class TestSkills(unittest.TestCase):
 
     def test_skills_have_frontmatter_and_no_prompt_only_paths(self):
         skill_files = sorted(SKILLS.glob("*/SKILL.md"))
-        self.assertEqual(len(skill_files), 3)
+        # Named rather than counted: adding a skill should be a deliberate
+        # line in this test, while a stray directory still fails it.
+        self.assertEqual(
+            {f.parent.name for f in skill_files},
+            {"classify-document", "intake-triage", "review-draft",
+             "redact-document", "build-timeline", "reconcile-docket"},
+        )
         for f in skill_files:
             text = f.read_text()
             self.assertTrue(text.startswith("---\n"), f"{f}: missing frontmatter")
