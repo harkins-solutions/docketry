@@ -329,3 +329,18 @@ class TestRefusals(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestVerifyRefusesAnEmptyCheck(unittest.TestCase):
+    def test_all_terms_too_short_raises_instead_of_reporting_clean(self):
+        from docketry.redact import RedactionError, verify
+        with self.assertRaises(RedactionError) as ctx:
+            verify(__file__, ["x", "an"])
+        self.assertIn("nothing to check", str(ctx.exception))
+
+    def test_a_usable_term_alongside_a_short_one_still_checks(self):
+        from docketry.redact import verify
+        tmp = Path(tempfile.mkdtemp()) / "doc.txt"
+        tmp.write_text("the witness QUAGGA testified")
+        # The long term is checkable, so the check runs and finds it.
+        self.assertEqual(verify(tmp, ["x", "QUAGGA"]), ["quagga"])

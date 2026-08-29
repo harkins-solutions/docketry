@@ -30,6 +30,13 @@ Best practices here are **code, not suggestions**:
 
 - **Not hosted.** Docketry runs on the firm's machine. We never hold, transit,
   or store anyone's email.
+- **Not case management.** Docketry tracks a matter through the stages your
+  firm defines and gates the moves between them. It does no billing, no trust
+  accounting, no client portal and no calendar sync — that is your practice
+  management system's job and it is better at it.
+- **Not an access control system.** Roles decide what a hold is waiting for
+  and are recorded against the name of whoever released it. There is no login:
+  a role is an attestation, so the registry catches mistakes, not lies.
 - **Not a security product.** Docketry makes no malware, phishing, or other
   cybersecurity claims. Its attachment and sender gates are pipeline-hygiene
   policy — what the *pipeline* accepts — nothing more. Get real security from

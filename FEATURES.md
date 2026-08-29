@@ -182,6 +182,35 @@ and terms change between releases.
 - Internal: F1 (config); consumers to be decided feature by feature.
 - External: none — stdlib `urllib`. No provider SDK, no new dependency.
 
+### F14 — Workflow engine + role registry — SHIPPED v0.13
+Matters move through stages the same way messages move through the pipeline:
+a transition declares what must be true before it opens, and a matter that
+does not meet it holds and says why in words rather than rule names.
+Conditions read the record already there (a classified document, a received
+notice, a filled field). Every stage change is recorded with who made it, and
+an unattributed move is refused outright. The engine touches no database —
+`workflow-check` walks a hypothetical matter and shows where it holds, so a
+workflow can be tried before it is saved.
+
+This is NOT case management. There is no billing, no trust accounting, no
+client portal and no calendar, and there should not be: that ground belongs to
+the practice-management system the firm already pays for.
+
+Docketry ships no workflow of its own. `examples/workflow-generic.toml` is a
+bare intake/open/active/closed skeleton meant to be rewritten; a test asserts
+the shipped file mentions no practice, party or strategy at all. Per matter
+type, workflows live at `workflows/<type>.toml` — the same config idiom as
+adapters, lint rules and guardrails.
+
+`roles.toml` (optional) declares who may release what, checked when config
+loads rather than when someone needs it. It also lets seniority work: without
+a registry, clearing compared two strings, so an attorney could not release a
+hold marked for a paralegal. Read the limit plainly — Docketry has no login,
+so a role is an attestation recorded against a name. It catches mistakes, not
+lies, and the docs say so.
+- Internal: F0 (store), F1 (gates and approvals share the registry).
+- External: none — stdlib `tomllib`.
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -194,7 +223,7 @@ F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
 <<<<<<< Updated upstream
 F4 -> F9 -> F8 -> F11 -> F7 -> F10.
 =======
-F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F7 -> F10.
+F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F7 -> F10.
 >>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the

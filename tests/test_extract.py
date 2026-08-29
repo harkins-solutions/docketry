@@ -133,3 +133,32 @@ class TestPageForOffset(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCorruptFilesFailInOurVocabulary(unittest.TestCase):
+    """A truncated PDF is an ordinary thing to receive, not a crash."""
+
+    def test_a_truncated_pdf_raises_extraction_error_not_a_library_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "truncated.pdf"
+            p.write_bytes(b"%PDF-1.4\n1 0 obj")     # header, then nothing
+            with self.assertRaises(ExtractionError) as ctx:
+                extract_path(p)
+            self.assertIn("could not be read as a PDF", str(ctx.exception))
+
+    def test_a_file_that_is_not_a_pdf_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "notreally.pdf"
+            p.write_bytes(b"x")
+            with self.assertRaises(ExtractionError):
+                extract_path(p)
+
+    def test_a_file_that_is_not_a_docx_at_all(self):
+        if not HAVE_DOCX:
+            self.skipTest("python-docx not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "notreally.docx"
+            p.write_bytes(b"x")
+            with self.assertRaises(ExtractionError) as ctx:
+                extract_path(p)
+            self.assertIn("Word document", str(ctx.exception))
