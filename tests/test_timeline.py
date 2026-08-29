@@ -7,6 +7,7 @@ from pathlib import Path
 from docketry.envelope import parse_message
 from docketry.store import Store
 from docketry.timeline import (
+    CORRESPONDENCE,
     ATTACHED,
     CORRESPONDENCE,
     LINK_CAPTURED,
@@ -296,3 +297,60 @@ class TestFindingsAndHelpers(unittest.TestCase):
         wb = load_workbook(to_xlsx(tl, tmp / "f.xlsx"))
         about = "\n".join(str(c.value) for c in wb["About this file"]["A"])
         self.assertIn("never re-filed", about)
+
+
+class TestClientMailReachesItsOwnLayer(unittest.TestCase):
+    """The layer existed, was documented as privileged, and was always empty."""
+
+    def setUp(self):
+        self.store = Store(tempfile.mkdtemp())
+        env = parse_message(
+            _raw("Activity in Case", "x", msgid="n1@x"),
+            source="t", fetched_at="now")
+        mid = self.store.ingest(env, first_stage="ingest")
+        self.store.add_notice(mid, "pacer-nef", "service_notice",
+                              {"case_number": "26-CA-1"}, [])
+        for msgid, frm in (("t1@x", "mr.doe@client.com"),
+                           ("t2@x", "oc@theirfirm.com")):
+            self.store.ingest(
+                parse_message(_raw("Re: the case", "hello", msgid=msgid,
+                                   frm=frm, refs=["root@x"]),
+                              source="t", fetched_at="now"),
+                first_stage="ingest")
+
+    def _directory(self):
+        from docketry.contacts import load_contacts
+        p = Path(tempfile.mkdtemp()) / "c.toml"
+        p.write_text('[[contact]]\nemail="mr.doe@client.com"\nkind="client"\n'
+                     '[[contact]]\nemail="@theirfirm.com"\n'
+                     'kind="opposing_counsel"\n')
+        return load_contacts(p)
+
+    def test_without_a_directory_everything_falls_to_correspondence(self):
+        tl = build(self.store, "26-CA-1", threads=["root@x"])
+        layers = {e.layer for e in tl.entries if e.kind != "service"}
+        self.assertEqual(layers, {CORRESPONDENCE})
+
+    def test_with_a_directory_client_mail_is_separated(self):
+        from docketry.timeline import CLIENT
+        tl = build(self.store, "26-CA-1", threads=["root@x"],
+                   directory=self._directory())
+        by_layer = {e.layer for e in tl.entries}
+        self.assertIn(CLIENT, by_layer)
+        client = [e for e in tl.entries if e.layer == CLIENT]
+        self.assertEqual(len(client), 1)
+        self.assertIn("client.com", client[0].actor)
+
+    def test_the_other_side_stays_in_correspondence(self):
+        tl = build(self.store, "26-CA-1", threads=["root@x"],
+                   directory=self._directory())
+        oc = [e for e in tl.entries if "theirfirm" in e.actor]
+        self.assertEqual(oc[0].layer, CORRESPONDENCE)
+        self.assertEqual(oc[0].kind, "opposing_counsel")
+
+    def test_filtering_to_the_client_layer_returns_only_client_mail(self):
+        from docketry.timeline import CLIENT
+        tl = build(self.store, "26-CA-1", threads=["root@x"],
+                   directory=self._directory())
+        rows = tl.sorted_entries((CLIENT,))
+        self.assertEqual(len(rows), 1)

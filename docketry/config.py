@@ -34,6 +34,7 @@ class HomeConfig:
     registry: object | None = None
     # Your own domains, so inbound can be split internal/external.
     firm_domains: tuple = ()
+    directory: object | None = None
 
 
 def write_config(

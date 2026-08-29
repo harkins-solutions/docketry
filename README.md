@@ -115,7 +115,7 @@ read-only: messages are never marked, moved, or deleted.
 
 ## Skills starter pack
 
-`skills/` ships eight agent skills for Claude Code (or any Agent
+`skills/` ships nine agent skills for Claude Code (or any Agent
 Skills-compatible harness):
 
 | Skill | What it drives |
@@ -128,6 +128,7 @@ Skills-compatible harness):
 | `reconcile-docket` | diffing the reconstruction against a pulled docket |
 | `manage-matter` | matters moving through the firm's workflow stages |
 | `pipeline-health` | the report on volume, bottlenecks and dead config |
+| `assign-contacts` | who an address belongs to, and what that makes privileged |
 
 Install by copying into your project:
 
@@ -139,8 +140,8 @@ The skills are a front door, not a bypass: each one drives the same CLI
 commands and gates the pipeline uses, and each carries hard rules — a skill
 never verifies a citation from model knowledge, never applies a classification
 without a named human approver, never releases a hold itself, never edits a
-workflow to get a blocked matter through, and never turns queue figures into a
-statement about a named person.
+workflow to get a blocked matter through, never turns queue figures into a
+statement about a named person, and never decides for itself who the client is.
 
 Every skill ships with an eval suite, and a test fails the build if one does
 not: a tool an agent can drive without evals is an untested tool with a good

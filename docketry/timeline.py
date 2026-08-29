@@ -101,7 +101,8 @@ def _kind_for(notice_type: str) -> str:
             "hearing_notice": "hearing"}.get(notice_type, notice_type)
 
 
-def build(store, case_number: str, *, threads: list[str] | None = None) -> Timeline:
+def build(store, case_number: str, *, threads: list[str] | None = None,
+          directory=None) -> Timeline:
     """Weave the record layer for one case, plus any threads a human attached.
 
     Notices are matched on the case number they carry — exact, after
@@ -142,15 +143,22 @@ def build(store, case_number: str, *, threads: list[str] | None = None) -> Timel
         ))
 
     if attached_threads:
-        _add_threads(store, tl, attached_threads)
+        _add_threads(store, tl, attached_threads, directory)
 
     tl.gaps = find_gaps(tl)
     tl.findings = cross_layer_findings(tl)
     return tl
 
 
-def _add_threads(store, tl: Timeline, keys: set[str]) -> None:
-    """Pull in every message belonging to a thread a human attached."""
+def _add_threads(store, tl: Timeline, keys: set[str], directory=None) -> None:
+    """Pull in every message belonging to a thread a human attached.
+
+    Where each message lands depends on who wrote it. Client mail is
+    privileged and belongs in its own layer; without a contacts directory
+    nothing can tell it from correspondence with the other side, so it all
+    falls to CORRESPONDENCE — which is the safe direction, because the mistake
+    that matters is client mail sitting in a list somebody hands over.
+    """
     for row in store.list_by_status("ok"):
         env = json.loads(row["envelope_json"])
         refs = env.get("references") or []
@@ -158,10 +166,19 @@ def _add_threads(store, tl: Timeline, keys: set[str]) -> None:
                                     or env.get("message_id", ""))
         if key not in keys:
             continue
+        author = env.get("from_addr", "")
+        layer = CORRESPONDENCE
+        kind = "email"
+        if directory is not None:
+            contact_kind = directory.kind_of(author)
+            if directory.is_privileged(author):
+                layer = CLIENT
+            if contact_kind and contact_kind != "other":
+                kind = contact_kind
         tl.entries.append(Entry(
             when=env.get("date", ""),
-            layer=CORRESPONDENCE,
-            kind="email",
+            layer=layer,
+            kind=kind,
             title=env.get("subject", "") or "(no subject)",
             actor=env.get("from_addr", ""),
             availability=ATTACHED if env.get("attachments") else REFERENCED_ONLY,
