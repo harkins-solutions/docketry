@@ -82,13 +82,27 @@ class RedactionResult:
         return not self.survivors
 
 
+def _missing(module: str, extra: str, feature: str) -> str:
+    """Say something the reader can act on, which differs by how they got here.
+
+    A packaged executable cannot pip install anything into itself, so telling
+    someone running the one-file build to add an extra is advice they cannot
+    take — and it reads as the tool being broken rather than incomplete.
+    """
+    import sys
+    if getattr(sys, "frozen", False):
+        return (f"this build of Docketry does not include {feature} support"
+                f" ({module} is missing). Install from PyPI instead:"
+                f" pip install 'docketry[{extra}]'")
+    return (f"{feature} needs the '{extra}' extra:"
+            f" pip install 'docketry[{extra}]'")
+
+
 def _require(module: str, extra: str):
     try:
         return __import__(module)
     except ImportError:
-        raise RedactionError(
-            f"redaction needs the '{extra}' extra: pip install 'docketry[{extra}]'"
-        ) from None
+        raise RedactionError(_missing(module, extra, "redaction")) from None
 
 
 def _require_binaries() -> None:

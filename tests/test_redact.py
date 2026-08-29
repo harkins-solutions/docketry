@@ -344,3 +344,27 @@ class TestVerifyRefusesAnEmptyCheck(unittest.TestCase):
         tmp.write_text("the witness QUAGGA testified")
         # The long term is checkable, so the check runs and finds it.
         self.assertEqual(verify(tmp, ["x", "QUAGGA"]), ["quagga"])
+
+
+class TestMissingDependencyMessage(unittest.TestCase):
+    """What to do about it differs by how you installed Docketry."""
+
+    def test_a_pip_install_is_told_to_add_the_extra(self):
+        from docketry.redact import _missing
+        msg = _missing("pytesseract", "ocr", "redaction")
+        self.assertIn("pip install 'docketry[ocr]'", msg)
+        self.assertNotIn("this build", msg)
+
+    def test_a_packaged_binary_is_not_told_to_pip_into_itself(self):
+        # The 0.15.0 executable said "pip install docketry[ocr]", which the
+        # person running a one-file build cannot do — it reads as broken
+        # rather than incomplete.
+        import sys
+        from docketry.redact import _missing
+        sys.frozen = True
+        try:
+            msg = _missing("pytesseract", "ocr", "redaction")
+        finally:
+            del sys.frozen
+        self.assertIn("does not include redaction support", msg)
+        self.assertIn("pytesseract", msg)
