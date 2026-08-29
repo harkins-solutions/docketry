@@ -341,6 +341,28 @@ def cmd_docket_reconcile(args) -> None:
         sys.exit(1)
 
 
+
+def cmd_llm_check(args) -> None:
+    """Is a local model configured, reachable, and actually local?"""
+    from .llm import probe
+    cfg, _, _ = _open(args.home)
+    if cfg.llm is None:
+        print("no model configured — Docketry works fully without one")
+        print("to add a local model, put this in config.toml:")
+        print('  [llm]\n  base_url = "http://127.0.0.1:11434"\n  model = "llama3.1"')
+        return
+    result = probe(cfg.llm)
+    if result.startswith("REFUSED"):
+        print(_sev("FAIL") + f"  {result}")
+        sys.exit(1)
+    if result.startswith("unreachable"):
+        print(_sev("warn") + f"  {result}")
+        sys.exit(1)
+    print(_sev("  ok") + f"  {result}")
+    print("  a model here proposes only — it never releases a hold, approves,"
+          " classifies, or decides what to redact")
+
+
 def cmd_verify_draft(args) -> None:
     from .cite import CiteError, verify, extract_citations
     from .extract import ExtractionError, extract_path
@@ -531,6 +553,19 @@ def cmd_doctor(args) -> None:
         report("PASS", "COURTLISTENER_TOKEN set (live citation verification)")
     else:
         report("WARN", "COURTLISTENER_TOKEN not set — verify-draft runs extraction-only")
+    # Say plainly whether anything here can reach off this network. A promise
+    # the operator can check beats one they have to take on faith.
+    if cfg.llm is not None:
+        from .llm import probe
+        result = probe(cfg.llm)
+        if result.startswith("REFUSED"):
+            report("FAIL", f"model endpoint is NOT local — {result}")
+        elif result.startswith("unreachable"):
+            report("WARN", f"local model configured but {result}")
+        else:
+            report("PASS", f"local model {result} — proposals only, nothing leaves this network")
+    else:
+        report("PASS", "no model configured — nothing is sent anywhere")
     sys.exit(0 if ok else 1)
 
 
@@ -751,6 +786,9 @@ def main(argv=None) -> None:
                         help="restrict to these layers; repeatable")
         sp.add_argument("--in-thread", help="only entries in this thread")
         return sp
+
+    sp = sub.add_parser("llm-check", help="is a local model configured, reachable, and local")
+    sp.set_defaults(fn=cmd_llm_check)
 
     sp = _tl_args(sub.add_parser("timeline", help="the case as this firm received it"))
     sp.set_defaults(fn=cmd_timeline)

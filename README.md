@@ -48,6 +48,34 @@ a Docketry home the way you protect the rest of the client file system —
 OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
 Nothing is ever copied off the machine.
 
+## Bring your own model (optional, local only)
+
+Docketry works fully without a model, and calls one only if you configure it:
+
+```toml
+[llm]
+base_url = "http://127.0.0.1:11434"   # Ollama, llama.cpp, vLLM, LM Studio
+model = "qwen2.5"                     # or deepseek-r1, gemma2, llama3.1 ...
+```
+
+The endpoint is checked before any request is built and **refused unless it
+resolves entirely to your own network** — loopback or private range. Point it
+at a hosted API and Docketry stops rather than sending your documents to a
+vendor. `docketry llm-check` and `docketry doctor` both say plainly whether
+anything can reach off-network; with no model configured they say so too.
+
+Any model your server can load works — the model name is a config string, not
+an adapter. Reasoning models are handled: their narration is kept separate
+from the answer, never presented as the conclusion.
+
+A model here **proposes**. It never releases a hold, approves anything,
+classifies, or decides what to redact. Those stay deterministic and
+human-gated, and a test enforces that no gate, the pipeline runner, or the
+redaction path can consult one.
+
+We ship no weights and endorse no model; licences differ per release and are
+yours to check.
+
 ## Try it in sixty seconds
 
 ```console
