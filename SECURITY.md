@@ -13,10 +13,16 @@ maintainers can read.
 
 [pvr]: https://github.com/harkins-solutions/docketry/security/advisories/new
 
-That includes the case where Docketry itself mishandled something — a
-redaction that did not hold, data written somewhere it should not have been.
-Tell us privately and we will work out how to reproduce it without the
-original.
+If you do need to send us a document, redact it with Docketry first — it
+removes the words rather than covering them — and read what it reports. A box
+that comes back **unverifiable** covered no readable text, so the content is
+gone but nothing could be confirmed; look at that page yourself before it
+leaves your machine.
+
+That guidance stops where the tool is the problem. If Docketry is what
+mishandled something — a redaction that did not hold, data written somewhere
+it should not have been — do not redact with it and send it to us. Tell us what
+happened and we will work out how to reproduce it without the original.
 
 ## Reporting a vulnerability
 

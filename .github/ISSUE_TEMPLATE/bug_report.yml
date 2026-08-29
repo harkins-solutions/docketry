@@ -10,9 +10,20 @@ body:
 
         Docketry runs on your machine, so nothing has reached us unless you
         put it here. Please keep it that way — replace client names, case
-        numbers and addresses before you paste. If a real document is the
-        only way to show the problem, don't attach it; say so and we'll work
-        out something else.
+        numbers and addresses before you paste.
+
+        If a document is part of the problem, redact it with Docketry before
+        attaching anything:
+
+        ```
+        docketry redact-apply doc.pdf safe.pdf --term "Client Name"
+        ```
+
+        Check what it reports. A box that comes back **unverifiable** covered
+        no readable text — the content is gone but nothing could be confirmed,
+        so look at that page yourself first. If the tool is the thing that is
+        broken, don't attach the document at all: say so and we will work out
+        how to reproduce it without your client's file.
   - type: textarea
     id: what
     attributes:

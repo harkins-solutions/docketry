@@ -5,27 +5,36 @@ body:
   - type: markdown
     attributes:
       value: |
-        **Do not paste a real notice.** This tracker is public and permanent,
-        and a real one carries a case number, the parties and often an address.
+        **Do not paste a real notice as it arrived.** This tracker is public
+        and permanent, and a real one carries a case number, the parties and
+        often an address.
 
-        You do not need a real one. Adapters match on **format** — labels,
-        the sender's domain, the shape of the subject line. A notice you have
-        retyped with invented names and numbers, keeping the layout exactly as
-        it came, reproduces the problem just as well and is safer for both of
-        us.
-
-        If you would rather work from the real thing, Docketry can blank it
-        for you first:
+        **Run it through Docketry's redaction first.** It removes the words
+        rather than covering them, so what you paste has nothing underneath:
 
         ```
-        docketry redact-scan notice.pdf --term "Client Name" --term "26-CA-000123"
+        docketry redact-scan  notice.pdf --term "Client Name" --term "26-CA-000123"
         docketry redact-apply notice.pdf safe.pdf --term "Client Name" --term "26-CA-000123"
         ```
 
-        You may also be able to fix this yourself without waiting: the
-        **Court adapters** panel in `docketry ui` takes a pasted notice, finds
-        its fields and writes the adapter for you. An issue is still welcome —
-        if your court is not covered, it probably is not covered for others.
+        Then read what it tells you before you send anything:
+
+        - `verified` — the words it buried are not readable inside the bars.
+        - `unverifiable` — a box covered no text (a signature, a logo, a
+          photo). The content is destroyed but nothing could be checked, so
+          **look at that page yourself** before it leaves your machine.
+        - anything still listed as readable — do not send the file.
+
+        Retyping the notice with invented names, keeping the layout exactly as
+        it came, works just as well and is safer still: adapters match on
+        **format** — labels, the sender's domain, the shape of the subject —
+        not on content.
+
+        You may also be able to fix this without waiting for us. The **Court
+        adapters** panel in `docketry ui` takes a pasted notice, finds its
+        fields and writes the adapter for you. An issue is still welcome — if
+        your court is not covered, it probably is not covered for others.
+
   - type: input
     id: court
     attributes:
@@ -36,11 +45,12 @@ body:
   - type: textarea
     id: sample
     attributes:
-      label: A de-identified notice
+      label: A redacted or retyped notice
       description: >
-        The layout as it arrives, with invented names, numbers and dates.
-        Include the sender's domain and the subject line — those are what the
-        matching keys on.
+        Redacted with the commands above, or retyped with invented names,
+        numbers and dates. Keep the layout as it arrived, and include the
+        sender's domain and the subject line — those are what the matching
+        keys on.
       render: text
     validations:
       required: true

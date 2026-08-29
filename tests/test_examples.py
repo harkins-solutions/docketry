@@ -164,6 +164,15 @@ class TestIssueTemplatesGuardClientData(unittest.TestCase):
         # And it points at the tool that can blank one.
         self.assertIn("redact-apply", text)
 
+    def test_forms_that_invite_a_document_explain_the_unverifiable_state(self):
+        """Telling someone to redact is not enough on its own. A box over a
+        signature destroys the pixels but proves nothing, and that is exactly
+        the page somebody would send without looking."""
+        for name in ("adapter_not_parsing.yml", "bug_report.yml"):
+            text = (self.TEMPLATES / name).read_text().lower()
+            self.assertIn("redact-apply", text, name)
+            self.assertIn("unverifiable", text, name)
+
     def test_blank_issues_are_off_so_the_forms_are_not_bypassed(self):
         cfg = (self.TEMPLATES / "config.yml").read_text()
         self.assertIn("blank_issues_enabled: false", cfg)
