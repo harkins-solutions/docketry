@@ -171,6 +171,14 @@ class TestIssueTemplatesGuardClientData(unittest.TestCase):
     def test_security_policy_says_where_client_data_goes_instead(self):
         sec = (SKILLS.parent / "SECURITY.md").read_text().lower()
         self.assertIn("do not open an issue", sec)
-        # A route that exists. An invented address is worse than none: the
+        # Routes that exist. An invented address is worse than none: the
         # report goes nowhere and the reporter thinks they have told you.
         self.assertIn("security/advisories/new", sec)
+        self.assertIn("harkinssolutionssystemsgroup.com", sec)
+
+    def test_reporting_does_not_require_a_github_account(self):
+        """Most of the people who would need this route are lawyers, not
+        GitHub users. Making an account to report that a redaction failed on
+        a client's file is a barrier in exactly the wrong place."""
+        cfg = (self.TEMPLATES / "config.yml").read_text().lower()
+        self.assertIn("mailto:", cfg)

@@ -3,8 +3,12 @@
 ## If it involves real client data, do not open an issue
 
 The issue tracker is public and permanent. If reporting something would mean
-posting a client's name, a case number, a document or an address, stop and use
-[**private vulnerability reporting**][pvr] instead — it opens a report only the
+posting a client's name, a case number, a document or an address, stop and
+email **Joshua@HarkinsSolutionsSystemsGroup.com** instead.
+
+You do not need a GitHub account to do that, and you should not have to make
+one to tell us something went wrong with a client's file. If you would rather
+use GitHub, [private vulnerability reporting][pvr] opens a report only the
 maintainers can read.
 
 [pvr]: https://github.com/harkins-solutions/docketry/security/advisories/new
@@ -16,8 +20,9 @@ original.
 
 ## Reporting a vulnerability
 
-Use [private vulnerability reporting][pvr]. Please include what you did, what
-happened, and the version. We will confirm receipt, tell you what we find, and
+Email **Joshua@HarkinsSolutionsSystemsGroup.com**, or use [private vulnerability reporting][pvr] if you prefer
+to keep it on GitHub. Please include what you did, what happened, and the
+version. We will confirm receipt, tell you what we find, and
 credit you in the release notes unless you would rather we did not.
 
 Do not open a public issue for a vulnerability, and please do not post a
