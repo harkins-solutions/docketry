@@ -24,7 +24,16 @@ jobs:
       - name: Build single-file executable
         run: |
           pip install pyinstaller pypdf python-docx eyecite httpx openpyxl pytesseract Pillow
-          pyinstaller --onefile --name docketry --collect-data reporters_db --collect-data courts_db docketry_app.py
+          # pytesseract is reached only through __import__(name) in
+          # _require(), which PyInstaller's static analysis cannot see, so
+          # it has to be named. The 0.15.0 binary shipped without it and
+          # reported OCR as unavailable on machines that had Tesseract.
+          pyinstaller --onefile --name docketry \
+            --collect-data reporters_db --collect-data courts_db \
+            --hidden-import pytesseract --hidden-import PIL \
+            --hidden-import pypdf --hidden-import docx \
+            --hidden-import openpyxl \
+            docketry_app.py
       - name: Rename artifact
         shell: bash
         run: mv dist/docketry* "dist/${{ matrix.artifact }}" 2>/dev/null || mv dist/docketry.exe "dist/${{ matrix.artifact }}"

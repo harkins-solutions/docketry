@@ -5,4 +5,4 @@ legal workflow tools. It never reaches into a mailbox the firm works from;
 it drains a dedicated intake mailbox the firm forwards into, normalizes each
 message, and enforces guardrail gates before anything moves downstream.
 """
-__version__ = "0.15.0"
+__version__ = "0.15.1"
