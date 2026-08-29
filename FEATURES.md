@@ -238,6 +238,31 @@ report.
 - Internal: F0 (store), F1 (gate list), F14 (matters).
 - External: none.
 
+### F16 — Contacts directory — SHIPPED v0.15
+`contacts.toml` says who an address belongs to. Two axes kept apart: a
+contact's KIND is what they are to the firm (staff, client, opposing counsel,
+court, expert, vendor), while ROLES are what a staff member may release and
+must name a role declared in roles.toml — an opposing-counsel entry with a
+role is refused, because collapsing the two would make the other side the sort
+of thing that can clear a hold.
+
+Keyed by email, not by name: an address is unique, comparable and already on
+every message. A leading `@` claims a whole domain, which is how a firm says
+"everyone there is the other side" without listing them.
+
+This is what the timeline was missing. It has always declared a `client`
+layer, described it as privileged, and never put anything in it, because
+nothing knew which addresses belonged to the client — a layer that is always
+empty is worse than no layer, since somebody filters by it, sees nothing, and
+concludes there was no client communication. With a directory, client mail
+lands in its own layer and the report groups correspondence by who wrote it.
+
+Optional. Without it everything falls to correspondence, which is the safe
+direction: the mistake that matters is privileged mail sitting in a list
+somebody hands over.
+- Internal: F12 (timeline layers), F14 (roles), F15 (report).
+- External: none — stdlib `tomllib`.
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -250,7 +275,7 @@ F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
 <<<<<<< Updated upstream
 F4 -> F9 -> F8 -> F11 -> F7 -> F10.
 =======
-F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F15 -> F7 -> F10.
+F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F15 -> F16 -> F7 -> F10.
 >>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the

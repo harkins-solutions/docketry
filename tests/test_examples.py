@@ -52,7 +52,7 @@ class TestSkills(unittest.TestCase):
             {f.parent.name for f in skill_files},
             {"classify-document", "intake-triage", "review-draft",
              "redact-document", "build-timeline", "reconcile-docket",
-             "manage-matter", "pipeline-health"},
+             "manage-matter", "pipeline-health", "assign-contacts"},
         )
         for f in skill_files:
             text = f.read_text()

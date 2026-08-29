@@ -39,6 +39,15 @@ def _registry(home):
         sys.exit(f"roles.toml refused: {e}")
 
 
+def _directory(home, registry=None):
+    """The firm's contacts directory, when it has written one."""
+    from .contacts import ContactError, load_if_present
+    try:
+        return load_if_present(home, registry)
+    except ContactError as e:
+        sys.exit(f"contacts.toml refused: {e}")
+
+
 def _open(home: str):
     cfg = load_home(home)
     if not cfg.manifest_path.exists():
@@ -49,6 +58,7 @@ def _open(home: str):
     except Exception as e:
         sys.exit(f"{cfg.manifest_path.name} refused: {e}")
     cfg.registry = registry
+    cfg.directory = _directory(cfg.home, registry)
     return cfg, pipeline, Store(cfg.store_path)
 
 
@@ -288,8 +298,9 @@ def cmd_redact_verify(args) -> None:
 
 def _timeline(args):
     from .timeline import build
-    _, _, store = _open(args.home)
-    return build(store, args.case, threads=args.thread or None)
+    cfg, _, store = _open(args.home)
+    return build(store, args.case, threads=args.thread or None,
+                 directory=cfg.directory)
 
 
 def cmd_timeline(args) -> None:
@@ -538,7 +549,7 @@ def cmd_report(args) -> None:
     from .report import build
     cfg, pipeline, store = _open(args.home)
     rep = build(store, pipeline, days=args.days,
-                firm_domains=cfg.firm_domains)
+                firm_domains=cfg.firm_domains, directory=cfg.directory)
 
     print(f"last {rep.days} days — {rep.ingested} message(s) in")
     if rep.by_status:
@@ -548,6 +559,10 @@ def cmd_report(args) -> None:
         print("\ncorrespondence — mail someone has to answer")
         for domain, n in rep.correspondence[:10]:
             print(f"  {str(n).rjust(5)}  {domain}")
+    if rep.by_kind:
+        print("\nwho wrote — correspondence by who they are")
+        for kind, n in rep.by_kind:
+            print(f"  {str(n).rjust(5)}  {kind.replace('_', ' ')}")
     if rep.notifications:
         print("\nnotifications — one-way, nobody replies to these")
         for domain, n in rep.notifications[:10]:
@@ -599,6 +614,28 @@ def cmd_report(args) -> None:
         print("\n  " + note)
     print("\ncounted by role and by gate. Docketry has no login, so it does not"
           " measure people.")
+
+
+
+def cmd_contacts(args) -> None:
+    from .contacts import KINDS
+    cfg, _, _ = _open(args.home)
+    d = cfg.directory
+    if d is None:
+        print("no contacts.toml — Docketry cannot tell client mail from the"
+              " other side's, so all of it is filed as correspondence")
+        print("to set it up, copy examples/contacts.toml into"
+              f" {cfg.home}/contacts.toml")
+        return
+    everyone = sorted(list(d.by_email.values()) + list(d.domains.values()),
+                      key=lambda c: (KINDS.index(c.kind), c.email))
+    for c in everyone:
+        roles = f"  roles: {', '.join(c.roles)}" if c.roles else ""
+        print(f"  {c.kind.ljust(18)} {c.email.ljust(32)} {c.label}{roles}")
+    print(f"\n{len(everyone)} contact(s)")
+    if not any(c.kind == "client" for c in everyone):
+        print(_sev("warn") + "  no client contacts — until one is listed,"
+              " privileged mail is filed alongside the other side's")
 
 
 def cmd_verify_draft(args) -> None:
@@ -726,7 +763,8 @@ def cmd_ui(args) -> None:
     cfg, pipeline, store = _open(args.home)
     store.close()
     server = make_server(cfg.store_path, pipeline, port=args.port,
-                         home=cfg.home, firm_domains=cfg.firm_domains)
+                         home=cfg.home, firm_domains=cfg.firm_domains,
+                         directory=cfg.directory)
     print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()
@@ -1075,6 +1113,9 @@ def main(argv=None) -> None:
     sp = sub.add_parser("report", help="pipeline health: sources, bottlenecks, dead config")
     sp.add_argument("--days", type=int, default=30)
     sp.set_defaults(fn=cmd_report)
+
+    sp = sub.add_parser("contacts", help="who an address belongs to")
+    sp.set_defaults(fn=cmd_contacts)
 
     sp = sub.add_parser("roles", help="who may release what")
     sp.set_defaults(fn=cmd_roles)

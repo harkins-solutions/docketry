@@ -194,3 +194,40 @@ class TestOneWaySourcesAreCountedApart(unittest.TestCase):
         self._add("e@x", "digest@barassociation.org", "List-Id: <news.bar>\r\n")
         self.assertEqual(build(self.store, days=30).notifications,
                          [("barassociation.org", 1)])
+
+
+class TestCorrespondenceByWhoTheyAre(unittest.TestCase):
+    def setUp(self):
+        from docketry.contacts import load_contacts
+        self.store = Store(tempfile.mkdtemp())
+        p = Path(tempfile.mkdtemp()) / "c.toml"
+        p.write_text('[[contact]]\nemail="@theirfirm.com"\n'
+                     'kind="opposing_counsel"\n'
+                     '[[contact]]\nemail="mr.doe@client.com"\nkind="client"\n')
+        self.directory = load_contacts(p)
+
+    def _add(self, msgid, frm):
+        self.store.ingest(_msg(msgid, frm), first_stage="ingest")
+
+    def test_volume_is_grouped_by_who_wrote_it(self):
+        self._add("a@x", "oc@theirfirm.com")
+        self._add("b@x", "also@theirfirm.com")
+        self._add("c@x", "mr.doe@client.com")
+        rep = build(self.store, days=30, directory=self.directory)
+        self.assertEqual(dict(rep.by_kind),
+                         {"opposing_counsel": 2, "client": 1})
+
+    def test_an_unknown_sender_is_other_not_a_guess(self):
+        self._add("d@x", "someone@nowhere.com")
+        rep = build(self.store, days=30, directory=self.directory)
+        self.assertEqual(dict(rep.by_kind), {"other": 1})
+
+    def test_without_a_directory_there_is_no_kind_breakdown(self):
+        self._add("e@x", "oc@theirfirm.com")
+        self.assertEqual(build(self.store, days=30).by_kind, [])
+
+    def test_notifications_are_not_counted_as_someone_writing(self):
+        self._add("f@x", "noreply@court.gov")
+        self._add("g@x", "oc@theirfirm.com")
+        rep = build(self.store, days=30, directory=self.directory)
+        self.assertEqual(dict(rep.by_kind), {"opposing_counsel": 1})

@@ -51,6 +51,7 @@ class Report:
     # are different work, and averaging them together hides the second.
     notifications: list = field(default_factory=list)    # (domain, count)
     correspondence: list = field(default_factory=list)   # (domain, count)
+    by_kind: list = field(default_factory=list)          # (kind, count)
     internal: int = 0
     external: int = 0
     unknown_side: int = 0
@@ -69,7 +70,7 @@ class Report:
 
 
 def build(store, pipeline=None, *, days: int = 30, firm_domains=(),
-          stuck_after_days: float = 30.0) -> Report:
+          stuck_after_days: float = 30.0, directory=None) -> Report:
     rep = Report(days=days)
     base = store.stats(days)
     rep.ingested = base["ingested"]
@@ -79,6 +80,7 @@ def build(store, pipeline=None, *, days: int = 30, firm_domains=(),
     counts: dict[str, int] = {}
     one_way: dict[str, int] = {}
     two_way: dict[str, int] = {}
+    kinds: dict[str, int] = {}
     firm = {d.strip().lower().lstrip("@") for d in firm_domains if d.strip()}
     for addr, n, machine, noticed in store.sender_profile(days):
         d = domain_of(addr)
@@ -91,6 +93,11 @@ def build(store, pipeline=None, *, days: int = 30, firm_domains=(),
         announces = machine > 0 or noticed > 0 or _is_noreply(addr)
         bucket = one_way if announces else two_way
         bucket[d] = bucket.get(d, 0) + n
+        if directory is not None and not announces:
+            # Who they are, not just where they are. "Twelve from opposing
+            # counsel" is a different fact from "twelve from a domain".
+            kinds[directory.kind_of(addr)] = (
+                kinds.get(directory.kind_of(addr), 0) + n)
         if d in firm:
             rep.internal += n
         else:
@@ -98,6 +105,7 @@ def build(store, pipeline=None, *, days: int = 30, firm_domains=(),
     rep.by_domain = sorted(counts.items(), key=lambda kv: -kv[1])
     rep.notifications = sorted(one_way.items(), key=lambda kv: -kv[1])
     rep.correspondence = sorted(two_way.items(), key=lambda kv: -kv[1])
+    rep.by_kind = sorted(kinds.items(), key=lambda kv: -kv[1])
     if not firm:
         rep.notes.append(
             "internal and external cannot be separated: no firm domains are"

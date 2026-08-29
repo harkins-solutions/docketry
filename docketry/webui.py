@@ -272,6 +272,13 @@ def _report_body(rep) -> str:
             f"<td>{_esc(d)}</td></tr>" for d, n in rows_src[:12])
         out.append(f"<h2>{title}</h2><table>{rows}</table>"
                    f'<p class="hint">{note}</p>')
+    if rep.by_kind:
+        rows = "".join(f"<tr><td class='n'>{n}</td>"
+                       f"<td>{_esc(k.replace('_', ' '))}</td></tr>"
+                       for k, n in rep.by_kind)
+        out.append(f"<h2>Who wrote</h2><table>{rows}</table>"
+                   '<p class="hint">Correspondence by who they are, from your'
+                   " contacts directory.</p>")
     if rep.by_domain and (rep.internal or rep.external):
         out.append(f'<p class="hint">external {rep.external} ·'
                    f" internal {rep.internal}</p>")
@@ -327,7 +334,7 @@ def _report_body(rep) -> str:
 
 
 def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
-                home=None, firm_domains=()):
+                home=None, firm_domains=(), directory=None):
     # adapters.toml lives in the Docketry home, beside the store.
     home = Path(home) if home else Path(store_path).parent
     if host != "127.0.0.1":
@@ -370,7 +377,8 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                 store = self._store()
                 try:
                     rep = build(store, pipeline, days=30,
-                                firm_domains=firm_domains)
+                                firm_domains=firm_domains,
+                                directory=directory)
                     self._html(_REPORT.format(days=rep.days,
                                               body=_report_body(rep)))
                 finally:

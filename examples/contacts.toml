@@ -1,0 +1,38 @@
+# Who an address belongs to. Copy this to your Docketry home as contacts.toml
+# and replace every line — the entries below are placeholders.
+#
+# Optional. Without it, mail from the client and mail from the other side sit
+# in the same list, because nothing knows which is which.
+#
+# kind: staff | client | opposing_counsel | court | expert | vendor | other
+#
+#   kind  is what someone IS to the firm. It decides where their mail lands —
+#         client correspondence is privileged and is kept in its own layer.
+#   roles is what a STAFF member may release, and must name a role declared in
+#         roles.toml. Nobody outside the firm has one; an opposing counsel
+#         entry with a role is refused.
+#
+# You can name one address, or claim a whole domain with a leading @ — which
+# is how you say "everyone there is opposing counsel" without listing them.
+
+[[contact]]
+email = "someone@yourfirm.example"
+name = "Someone Here"
+kind = "staff"
+roles = ["paralegal"]
+
+[[contact]]
+email = "@theirfirm.example"
+name = "The Other Side"
+kind = "opposing_counsel"
+note = "Whole domain: anyone writing from there is the other side."
+
+[[contact]]
+email = "@flmd.uscourts.example"
+kind = "court"
+
+# Client entries decide what counts as privileged, so they are worth getting
+# right before anything is exported or handed to anyone.
+# [[contact]]
+# email = "someone@client.example"
+# kind = "client"
