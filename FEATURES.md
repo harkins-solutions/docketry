@@ -130,6 +130,28 @@ would still cost the page its text layer.
   Tesseract binary, `pytesseract` and `Pillow`. The overlay is hand-built
   rather than pulling in a PDF drawing library.
 
+<<<<<<< Updated upstream
+=======
+### F12 — Case timeline + docket reconciliation — SHIPPED v0.10
+Weaves the notices, receipts and correspondence for one case into a single
+chronology, in four layers that never merge: record (served/filed/court
+events), correspondence, client, and derived (our own inferences). Notices
+match on the case number they carry; correspondence is never guessed into a
+case — a thread joins only when a human attaches it. Each entry says what the
+firm actually holds: the document, a captured link, or nothing. Gaps are split
+into proven (a hole in a federal document-number sequence, collapsed into
+runs) and suspected; where there is no sequence the tool asserts nothing and
+says so. `docket-reconcile` diffs the reconstruction against a docket a person
+pulled — both directions, with fuzzy matches staged for confirmation and
+nothing ever fetched from a court system. Exports to a real Word table and to
+Excel with filters and real date cells; both carry the not-the-court's-docket
+disclaimer on their own face.
+- Internal: F0 (envelope, now capturing In-Reply-To/References for threading),
+  F3 (the parsed notices this is built from).
+- External: `openpyxl` and `python-docx` (extra `export`); the core weave and
+  the reconciliation are stdlib.
+
+>>>>>>> Stashed changes
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
@@ -139,7 +161,11 @@ outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
 ## Build order
 
 F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
+<<<<<<< Updated upstream
 F4 -> F9 -> F8 -> F11 -> F7 -> F10.
+=======
+F4 -> F9 -> F8 -> F11 -> F12 -> F7 -> F10.
+>>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the
 gate-plugin story end to end; F5 before F6 because the linter borrows the

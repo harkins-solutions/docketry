@@ -51,7 +51,7 @@ class TestSkills(unittest.TestCase):
         self.assertEqual(
             {f.parent.name for f in skill_files},
             {"classify-document", "intake-triage", "review-draft",
-             "redact-document"},
+             "redact-document", "build-timeline", "reconcile-docket"},
         )
         for f in skill_files:
             text = f.read_text()
