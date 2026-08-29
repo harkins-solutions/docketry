@@ -115,10 +115,21 @@ read-only: messages are never marked, moved, or deleted.
 
 ## Skills starter pack
 
-`skills/` ships three agent skills for Claude Code (or any Agent
-Skills-compatible harness): `review-draft` (runs verify-draft + lint on a
-draft), `classify-document`, and `intake-triage`. Install by copying into
-your project:
+`skills/` ships eight agent skills for Claude Code (or any Agent
+Skills-compatible harness):
+
+| Skill | What it drives |
+|---|---|
+| `review-draft` | verify-draft + lint on a draft |
+| `classify-document` | the deterministic classifier and its staged queue |
+| `intake-triage` | the review queue and approvals |
+| `redact-document` | redaction, its preview, and its verification |
+| `build-timeline` | the case timeline and its exports |
+| `reconcile-docket` | diffing the reconstruction against a pulled docket |
+| `manage-matter` | matters moving through the firm's workflow stages |
+| `pipeline-health` | the report on volume, bottlenecks and dead config |
+
+Install by copying into your project:
 
 ```console
 $ cp -r skills/* .claude/skills/
@@ -126,10 +137,15 @@ $ cp -r skills/* .claude/skills/
 
 The skills are a front door, not a bypass: each one drives the same CLI
 commands and gates the pipeline uses, and each carries hard rules — a skill
-never verifies a citation from model knowledge, never applies a
-classification without a named human approver, and never releases a hold
-itself. `examples/` includes three guardrail manifests to start from
-(default, solo-strict, litigation-team).
+never verifies a citation from model knowledge, never applies a classification
+without a named human approver, never releases a hold itself, never edits a
+workflow to get a blocked matter through, and never turns queue figures into a
+statement about a named person.
+
+Every skill ships with an eval suite, and a test fails the build if one does
+not: a tool an agent can drive without evals is an untested tool with a good
+description. `examples/` includes three guardrail manifests to start from
+(default, solo-strict, litigation-team), plus a bare workflow and roles file.
 
 ## Evals
 

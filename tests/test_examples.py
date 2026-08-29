@@ -51,7 +51,8 @@ class TestSkills(unittest.TestCase):
         self.assertEqual(
             {f.parent.name for f in skill_files},
             {"classify-document", "intake-triage", "review-draft",
-             "redact-document", "build-timeline", "reconcile-docket"},
+             "redact-document", "build-timeline", "reconcile-docket",
+             "manage-matter", "pipeline-health"},
         )
         for f in skill_files:
             text = f.read_text()
@@ -59,3 +60,30 @@ class TestSkills(unittest.TestCase):
             self.assertIn("name:", text)
             self.assertIn("description:", text)
             self.assertIn("docketry ", text, f"{f}: a skill must call the real CLI")
+
+
+class TestNothingShipsWithoutEvals(unittest.TestCase):
+    """A skill with no eval suite is an untested tool with a nice description.
+
+    The suite-shape test above validates the eval cases it FINDS, so a skill
+    that ships with none passes it silently — the glob simply returns fewer
+    results. This closes that, because "remember to add evals" is not a
+    control.
+    """
+
+    def test_every_skill_has_at_least_one_eval_case(self):
+        for skill in sorted(SKILLS.glob("*/SKILL.md")):
+            cases = sorted((skill.parent / "evals").glob("*/prompt.md"))
+            self.assertTrue(
+                cases,
+                f"{skill.parent.name} ships with no evals — a tool an agent can"
+                " drive needs at least one case asserting it uses the tool"
+                " rather than answering from its own knowledge")
+
+    def test_every_eval_case_asserts_a_hard_rule_or_real_tool_use(self):
+        for prompt in sorted(SKILLS.glob("*/evals/*/prompt.md")):
+            graders = list((prompt.parent / "graders").glob("*.md"))
+            kinds = "\n".join(g.read_text() for g in graders)
+            self.assertIn("type: tool_used", kinds,
+                          f"{prompt.parent.name}: no grader checks what the"
+                          " agent actually ran")
