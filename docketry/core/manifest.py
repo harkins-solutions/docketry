@@ -1,9 +1,10 @@
-"""Load and validate the guardrail manifest (TOML).
+"""Load and validate guardrails.toml.
 
-The manifest is where a firm declares its pipeline stages and which gate runs
-where. Validation is strict and load-time: unknown gates, unknown stages, a
-gate bound outside its declared allowed_stages, or a bare on_fail value all
-refuse to load — a misconfigured pipeline never runs half-enforced.
+The manifest declares pipeline stages and which gate binds to which stage.
+Validation is strict and happens at load: an unknown gate id, an unknown
+stage, a gate bound outside its declared `allowed_stages`, an `on_fail` value
+that is not block/bounce/warn, or options a gate's validate_options() rejects
+all refuse the file. A partially valid manifest never runs.
 """
 from __future__ import annotations
 

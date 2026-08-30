@@ -1,13 +1,14 @@
-# Example: small litigation firm intake pipeline.
-# Stages run left to right. A gate's binds_to must sit inside the stages the
-# gate declares itself meant for — binding it elsewhere refuses to load.
+# Example intake pipeline for a small litigation firm.
+#
+# Stages run left to right. A gate's binds_to must fall within the stages that
+# gate declares in allowed_stages; binding it elsewhere refuses to load.
 
 [pipeline]
 stages = ["ingest", "review"]
 
-# The ethical wall. Uncomment, list your own screened parties, and anything
-# mentioning one stops here — released only by the role named below, on the
-# record. The terms live only in this local file and never leave the machine.
+# Conflict screen. Uncomment and list your own parties: a message naming one
+# gets status `blocked` until the role below releases it, and the release is
+# recorded with a name, a role and a timestamp. Terms stay in this file.
 #
 # [[gate]]
 # id = "name-screen"
@@ -25,7 +26,7 @@ binds_to = ["ingest"]
 on_fail = "bounce"          # a court notice that no longer parses is reviewed, not dropped
 authority = "paralegal"
 
-# Below here is pipeline hygiene: what intake will accept, and from whom.
+# Below: which senders and attachments intake accepts.
 [[gate]]
 id = "sender-scope"
 binds_to = ["ingest"]

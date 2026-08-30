@@ -1,18 +1,12 @@
-"""`docketry init`, as questions rather than three files to author.
+"""`docketry init` as a set of questions, and the files it writes.
 
-The install path used to assume someone comfortable with pip, an IMAP app
-password, a TOML manifest and a home directory. At a six-attorney firm that
-person frequently does not exist, and whoever gets closest becomes the
-permanent maintainer of a config surface they did not choose. So the config
-surface is not something anyone has to author: this asks in plain words and
-writes guardrails.toml and roles.toml from the answers.
+Asks nine questions and writes config.toml, guardrails.toml and roles.toml
+from the answers, each with comments explaining the setting so the files can
+be edited afterwards without re-running this.
 
-Two rules it keeps. Nothing here is a hidden default — every answer is
-written into the file as ordinary TOML with a comment saying what it does, so
-the firm can read and change it afterwards without running this again. And it
-never writes a home that refuses to load: the manifest and the registry are
-built in memory and validated first, so a wizard that produced a broken
-install would fail before touching the disk rather than after.
+The manifest and the role registry are built in memory and validated by the
+same loaders that read them from disk (validate()), so answers that would not
+load fail before anything is written.
 """
 from __future__ import annotations
 
@@ -140,13 +134,13 @@ class Asker:
 def interview(ask: Asker) -> Answers:
     """Ask the questions. Writes nothing; returns what was said."""
     a = Answers()
-    ask.say("Docketry setup. Nine questions, all changeable afterwards by")
-    ask.say("editing the files this writes. Enter accepts the [default].")
+    ask.say("Docketry setup: nine questions. Everything you answer is written")
+    ask.say("to files you can edit later. Enter accepts the [default].")
 
     ask.say()
     ask.say("-- The mailbox Docketry watches ------------------------------")
-    ask.say("Point a forwarding rule at a mailbox nobody works out of, and")
-    ask.say("Docketry reads it. It never sends, and never deletes.")
+    ask.say("Point a forwarding rule at a mailbox nobody works out of.")
+    ask.say("Docketry reads it read-only: it never sends, marks or deletes.")
     # No default here on purpose: a placeholder default means pressing Enter
     # configures a mailbox that does not exist.
     a.address = ask.text("Intake mailbox address (e.g. intake@yourfirm.com)",
@@ -166,8 +160,8 @@ def interview(ask: Asker) -> Answers:
 
     ask.say()
     ask.say("-- Who releases a hold ---------------------------------------")
-    ask.say("When a gate holds a message, someone has to say so on the record.")
-    ask.say("Use whatever your firm actually calls these jobs.")
+    ask.say("Releasing a hold records a name and a role. Use whatever your")
+    ask.say("firm calls these jobs; the names go into roles.toml as written.")
     a.reviewer = ask.text("Who reviews intake day to day", "paralegal",
                           required=True)
     a.releaser = ask.text("Who can release anything, including a conflict hold",
@@ -175,22 +169,22 @@ def interview(ask: Asker) -> Answers:
 
     ask.say()
     ask.say("-- The ethical wall ------------------------------------------")
-    ask.say("Names or matters that must not move through intake unreviewed.")
-    ask.say("Anything mentioning one stops, and only the release is on the")
-    ask.say("record — with who, and when. Blank if you have no wall today.")
+    ask.say("Parties or matters to screen. Any message naming one stops until")
+    ask.say("released, and the release is recorded with a name and a time.")
+    ask.say("Leave blank if you have no wall to enforce.")
     a.screened = ask.items("Screened names or matters (comma separated)")
 
     ask.say()
     ask.say("-- Court e-service -------------------------------------------")
-    ask.say("Docketry parses service and docket notices into dates and case")
-    ask.say("numbers, and holds any that it cannot read rather than guessing.")
+    ask.say("Service and docket notices are parsed into case numbers, titles")
+    ask.say("and dates. Anything that will not parse is held, not guessed at.")
     a.eservice = ask.items(
         "Addresses or domains court e-service arrives from",
         tuple(DEFAULT_ESERVICE))
 
     ask.say()
     ask.say("-- Attachment hygiene ----------------------------------------")
-    ask.say("Pipeline policy, not antivirus: what intake will accept.")
+    ask.say("Extension and size limits on attachments. Not antivirus.")
     a.max_size_mb = ask.number("Hold attachments larger than (MB)", 25.0)
     return a
 
@@ -207,11 +201,12 @@ def roles_toml(a: Answers) -> str:
 # Who may release what. Written by `docketry init` from your answers.
 #
 # may_release lets seniority work: a role listed against a gate id can release
-# that gate even when the gate names someone else, so nobody senior is blocked
-# by a hold meant for someone junior. "*" releases anything.
+# that gate even when the gate's `authority` names a different role. "*"
+# releases anything. Without this file, an approval's role must match the
+# gate's authority exactly.
 #
-# A role here is an attestation recorded against a name. Docketry has no login.
-# This catches mistakes; it does not authenticate anyone.
+# Docketry has no login. A role is a name typed at approval time and checked
+# against this file, which catches mistakes; it does not authenticate anyone.
 
 [[role]]
 name = "{a.reviewer}"
@@ -223,8 +218,8 @@ name = "{a.releaser}"
 description = "Releases anything, including a conflict hold."
 may_release = ["*"]
 
-# Optional: list people and Docketry refuses a role they do not hold. Leave it
-# out and any name may claim any role.
+# Optional. List a person and they cannot approve under a role not listed
+# here. Leave them out and any name may claim any declared role.
 # [[person]]
 # name = "Dana Reyes"
 # roles = ["{a.reviewer}"]
@@ -235,8 +230,10 @@ def guardrails_toml(a: Answers) -> str:
     """The manifest, in the order the gates actually matter to a firm."""
     parts = ["""\
 # Docketry guardrail manifest. Written by `docketry init` from your answers.
-# Stages run left to right; each [[gate]] declares where it binds, what happens
-# on failure (block | bounce | warn), and which role can release it.
+#
+# Stages run left to right. Each [[gate]] declares the stages it binds to,
+# what a failing check does (block = stop, bounce = review queue, warn =
+# record and continue), and which role may release it.
 
 [pipeline]
 stages = ["ingest", "review"]
@@ -244,9 +241,10 @@ stages = ["ingest", "review"]
 
     if a.screened:
         parts.append(f"""
-# The ethical wall. A message mentioning one of these stops here, and only a
-# recorded release by {a.releaser} moves it — which is the record that matters
-# if the screen is ever the thing being questioned.
+# Ethical wall. Terms are matched case-insensitively on word boundaries in
+# the subject, body and attachment filenames. A match stops the message; only
+# a recorded release by {a.releaser} moves it, and that release is stored with
+# the approver's name, role and timestamp.
 [[gate]]
 id = "name-screen"
 binds_to = ["ingest"]
@@ -259,8 +257,8 @@ note = "ethical wall"
 """)
 
     parts.append(f"""
-# Court e-service. A notice this cannot read is held rather than guessed at,
-# because a misread hearing date is worse than an unread one.
+# Court e-service. Extracts case numbers, document titles and dates. A notice
+# the adapters cannot read is held rather than partially parsed.
 [[gate]]
 id = "notice-parser"
 binds_to = ["ingest"]
@@ -270,7 +268,8 @@ authority = "{a.reviewer}"
 
     if a.eservice:
         parts.append(f"""
-# Who intake accepts mail from. Everything else parks for a look.
+# Senders intake accepts. An address or an @domain suffix; anything else is
+# held for review.
 [[gate]]
 id = "sender-scope"
 binds_to = ["ingest"]
@@ -282,7 +281,7 @@ allow = {_toml_list(list(a.eservice) + ['@' + d for d in a.firm_domains])}
 """)
 
     parts.append(f"""
-# Pipeline hygiene, not antivirus: what intake will accept.
+# Attachment policy: extension and size limits. Not antivirus.
 [[gate]]
 id = "attachment-policy"
 binds_to = ["ingest"]
@@ -292,7 +291,7 @@ authority = "{a.reviewer}"
 [gate.options]
 max_size_mb = {a.max_size_mb:g}
 
-# Records where each message came from. Never holds anything.
+# Records source and hashes for each message. Informational; never holds.
 [[gate]]
 id = "provenance-stamp"
 binds_to = ["ingest"]

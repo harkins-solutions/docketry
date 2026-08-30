@@ -1,13 +1,12 @@
-# Litigation team: the wall and the court notices first, because those are the
-# two that cost something when they go wrong. Paralegals clear routine holds,
-# classification proposals flow to the queue, provenance always recorded.
+# Litigation team. Conflict screen and court notices first; paralegals clear
+# the routine holds; classification proposals go to the queue for approval.
 
 [pipeline]
 stages = ["ingest", "review"]
 
-# The ethical wall. A message naming a screened party stops — and only a
-# recorded release by an attorney moves it. Replace these with your own; the
-# terms never leave this file.
+# Conflict screen. Terms match case-insensitively on word boundaries in the
+# subject, body and attachment filenames. A match sets status `blocked` until
+# an attorney releases it. Replace these terms with your own.
 [[gate]]
 id = "name-screen"
 binds_to = ["ingest"]
@@ -18,15 +17,15 @@ authority = "attorney"
 terms = ["Walled Party LLC", "Confidential Matter Name"]
 note = "ethical wall"
 
-# A court notice this cannot read is reviewed, never dropped: a misread
-# hearing date is a malpractice claim, an unread one is a phone call.
+# Court notices. Anything the adapters cannot fully parse goes to the review
+# queue rather than being stored half-extracted.
 [[gate]]
 id = "notice-parser"
 binds_to = ["ingest"]
 on_fail = "bounce"
 authority = "paralegal"
 
-# Everything below is pipeline hygiene.
+# Below: sender and attachment policy, and the provenance record.
 [[gate]]
 id = "sender-scope"
 binds_to = ["ingest"]

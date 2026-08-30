@@ -1,16 +1,16 @@
-"""Home-directory config for a Docketry installation.
+"""The Docketry home: config.toml, and what load_home() reads from it.
 
-A Docketry "home" is one directory holding config.toml, the guardrail
-manifest, the SQLite store, and attachments — the whole installation is one
-folder on the firm's own disk. The IMAP password is read from the
-DOCKETRY_IMAP_PASSWORD environment variable first; storing it in config.toml
-is supported for single-machine setups (the file is created 0600).
+A home is one directory holding config.toml, guardrails.toml, the SQLite
+store and attachment bytes. Nothing is written outside it.
 
-That 0600 is a POSIX guarantee and nothing more. On Windows os.chmod moves the
-read-only bit and says nothing about who else may read the file, which inherits
-its ACL from the directory — so on Windows the environment variable is the only
-way to keep the password off a readable disk, and `init` says so out loud
-rather than leaving the number to imply a protection it does not have.
+The IMAP password comes from DOCKETRY_IMAP_PASSWORD if set, otherwise from
+config.toml. write_config() creates that file with mode 0600 rather than
+writing it and tightening it afterwards, which would leave the password
+readable in between.
+
+On Windows os.chmod only moves the read-only bit; the file's permissions come
+from the directory's ACL. Use the environment variable there — `docketry
+init` says so when a password is stored.
 """
 from __future__ import annotations
 
@@ -77,10 +77,9 @@ def write_config(
     if password:
         lines.append(f'password = "{password}"')
     lines.append("")
-    # Created 0600, not fixed up afterwards. write_text() followed by chmod
-    # leaves a window — short, but a window — in which the password sits on
-    # disk at whatever the umask allows, and any process that opened it in
-    # that window keeps its handle after the mode changes.
+    # Create at 0600 rather than writing then chmod'ing: the latter leaves
+    # the password on disk at the umask's permissions in between, and a
+    # process that opened it in that window keeps its handle afterwards.
     mode = stat.S_IRUSR | stat.S_IWUSR
     if cfg.exists():
         os.chmod(cfg, mode)      # O_CREAT's mode is ignored for an existing file
