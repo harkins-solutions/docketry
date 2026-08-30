@@ -12,7 +12,6 @@ from ..core.pipeline import Finding, SEVERITY_INFO
 from ..core.gates import register
 
 
-@register
 class DocClassifier:
     id = "doc-classifier"
     allowed_stages = None
@@ -26,3 +25,9 @@ class DocClassifier:
                     Finding(self.id, SEVERITY_INFO, f"{a.filename}: proposed {label} ({tier})")
                 )
         return findings
+
+
+# Registered explicitly rather than by decorator, because this gate ships
+# with Docketry but is not part of the port — it plugs in from tools/, the
+# same way yours does. `docketry gates` says so.
+register(DocClassifier, source="built-in (tools)")

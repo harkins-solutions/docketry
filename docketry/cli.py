@@ -28,6 +28,7 @@ from .core.manifest import DEFAULT_MANIFEST, load_manifest
 from .tools import notices as notices_mod
 from .core.pipeline import GateRefusal, Runner
 from .core.store import Store
+from .core import gates as gates_mod
 
 
 def _registry(home):
@@ -48,10 +49,27 @@ def _directory(home, registry=None):
         sys.exit(f"contacts.toml refused: {e}")
 
 
+def _load_gates(home) -> None:
+    """The firm's own gates, and any installed by a package.
+
+    Before the manifest, always: a manifest naming a gate refuses to load, so
+    the gates have to be there first. A file that fails to load stops the
+    command with the file named — a gate the operator believes is running and
+    is not is worse than no gate at all.
+    """
+    from .core.gates import GateLoadError, load_home as _home_gates, load_installed
+    try:
+        _home_gates(home)
+        load_installed()
+    except GateLoadError as e:
+        sys.exit(f"gate refused: {e}")
+
+
 def _open(home: str):
     cfg = load_home(home)
     if not cfg.manifest_path.exists():
         sys.exit(f"no {MANIFEST_NAME} in {home} — run: docketry init")
+    _load_gates(cfg.home)
     registry = _registry(cfg.home)
     try:
         pipeline = load_manifest(cfg.manifest_path, registry)
@@ -838,6 +856,27 @@ def cmd_doctor(args) -> None:
         report("PASS", f"mailbox: {cfg.mailbox.user} @ {cfg.mailbox.host} ({cfg.mailbox.folder})")
         if not cfg.mailbox.password:
             report("WARN", "no mailbox password: set DOCKETRY_IMAP_PASSWORD")
+    # Gates before the manifest: a manifest that binds one refuses to load
+    # until the gate is registered, so a broken gate file must be diagnosed
+    # here rather than surfacing as a confusing "unknown gate".
+    from .core.gates import GateLoadError, described
+    from .core.gates import load_home as _home_gates, load_installed
+    try:
+        _home_gates(home)
+        load_installed()
+        rows = described()
+        outside = [g for g, src, _, _ in rows if not src.startswith("built-in")]
+        report("PASS", f"gates: {len(rows)} available"
+                       + (f", {len(outside)} from outside the package"
+                          f" ({', '.join(outside)})" if outside else ""))
+        for gate_id, src, _, _ in rows:
+            if src.startswith("file:"):
+                # Say it plainly: this is code from the home directory, run
+                # with the operator's permissions.
+                report("PASS", f"  {gate_id} ← {_short_source(src, home)}"
+                               " (your own code)")
+    except GateLoadError as e:
+        report("FAIL", f"gate refused: {e}")
     if cfg.manifest_path.exists():
         try:
             pipeline = _lm(cfg.manifest_path)
@@ -995,6 +1034,151 @@ def cmd_anchor(args) -> None:
     print("moving it off this machine is the one step that is yours.")
     print(f"(Appended to {path} as well — but that file is on the same disk as")
     print(" the log it describes, so on its own it proves nothing.)")
+
+
+def cmd_new_gate(args) -> None:
+    """Write a working gate into the firm's home, ready to edit."""
+    from .core.gates import GATES_DIR, ID_SHAPE
+    from .scaffold import gate_binding_toml, gate_source
+
+    gate_id = args.id.strip()
+    if not ID_SHAPE.match(gate_id):
+        sys.exit(f"gate id {gate_id!r} should be lowercase words joined by"
+                 " hyphens, like 'long-subject' — that is the name manifests"
+                 " will bind it by")
+    directory = Path(args.home) / GATES_DIR
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / (gate_id.replace("-", "_") + ".py")
+    if path.exists() and not args.force:
+        sys.exit(f"{path} already exists — pass --force to overwrite it")
+    path.write_text(gate_source(gate_id, args.title or ""))
+    print(f"wrote {path}")
+    print()
+    print("It works as written: it holds any message with a long subject.")
+    print("Run it against a message before changing anything —")
+    print(f'  docketry --home {args.home} try-gate {gate_id} \\')
+    print('      --subject "this subject is quite a lot longer than five words"')
+    print()
+    print("Then bind it by adding this to guardrails.toml:")
+    print()
+    for line in gate_binding_toml(gate_id).splitlines():
+        print(f"    {line}")
+
+
+def _short_source(source: str, home) -> str:
+    """`file:/long/path/to/home/gates/x.py` reads better as `file:gates/x.py`."""
+    if not source.startswith("file:"):
+        return source
+    path = Path(source[len("file:"):])
+    try:
+        return "file:" + str(path.relative_to(Path(home).resolve()))
+    except ValueError:
+        return source
+
+
+def cmd_gates(args) -> None:
+    """Every gate this installation can bind, and where each came from."""
+    from .core.gates import described
+
+    _load_gates(args.home)
+    rows = described()
+    width = max((len(r[0]) for r in rows), default=4)
+    for gate_id, source, doc, stages in rows:
+        where = "" if stages is None else f"  [{', '.join(sorted(stages))} only]"
+        print(f"{gate_id:{width}}  {_short_source(source, args.home)}{where}")
+        if doc and not args.quiet:
+            print(f"{'':{width}}  {doc}")
+    if not args.quiet:
+        print()
+        print(f"{len(rows)} gate(s). 'built-in' ships with Docketry, 'file:' is")
+        print("yours from the gates/ directory, 'package:' came from pip.")
+        print("Writing one takes about five minutes: see GATES.md")
+
+
+def _try_options(args) -> dict:
+    """Options for the run: what was passed, else what the manifest says.
+
+    Falling back to the manifest means `try-gate` exercises the firm's own
+    configuration rather than a default nobody chose.
+    """
+    options = {}
+    for pair in args.option or []:
+        key, _, value = pair.partition("=")
+        if not _:
+            sys.exit(f"--option wants KEY=VALUE, got {pair!r}")
+        try:
+            options[key.strip()] = tomllib.loads(f"v = {value}")["v"]
+        except tomllib.TOMLDecodeError:
+            options[key.strip()] = value          # a bare string is fine
+    if options:
+        return options
+    manifest = Path(args.home) / MANIFEST_NAME
+    if manifest.exists():
+        data = tomllib.loads(manifest.read_text())
+        for gate in data.get("gate", []):
+            if gate.get("id") == args.gate:
+                return gate.get("options", {})
+    return {}
+
+
+def cmd_try_gate(args) -> None:
+    """Run one gate against one message and print what it found.
+
+    This is the loop a gate author needs: change the file, run this, read the
+    finding. No mailbox, no pipeline, no store, nothing to clean up.
+    """
+    from email.message import EmailMessage
+
+    from .core.envelope import parse_message
+    from .core.gates import get
+    from .core.pipeline import SEVERITY_FAIL
+    from .core.store import utcnow
+
+    _load_gates(args.home)
+    try:
+        cls = get(args.gate)
+    except KeyError as e:
+        sys.exit(f"{e}\n(`docketry gates` lists them; `docketry new-gate <id>`"
+                 " writes one)")
+    gate = cls()
+
+    if args.eml:
+        raw = Path(args.eml).read_bytes()
+    else:
+        m = EmailMessage()
+        m["From"] = args.sender
+        m["To"] = "intake@yourfirm.example"
+        m["Subject"] = args.subject
+        m.set_content(args.body or "")
+        for name in args.attach or []:
+            m.add_attachment(b"%PDF-1.4 sample", maintype="application",
+                             subtype="pdf", filename=name)
+        raw = bytes(m)
+    env = parse_message(raw, source="try-gate", fetched_at=utcnow())
+
+    options = _try_options(args)
+    problems = getattr(gate, "validate_options", lambda o: [])(options)
+    if problems:
+        sys.exit("these options would refuse the manifest: " + "; ".join(problems))
+
+    findings = gate.check(env, options)
+    print(f"gate:    {args.gate}"
+          f" ({_short_source(gates_mod.source_of(args.gate), args.home)})")
+    print(f"message: {env.subject!r} from {env.from_addr},"
+          f" {len(env.attachments)} attachment(s)")
+    if options:
+        print(f"options: {options}")
+    if not findings:
+        print("result:  no findings — this message passes")
+        return
+    for f in findings:
+        print(f"result:  [{f.severity}] {f.summary}")
+    if any(f.severity == SEVERITY_FAIL for f in findings):
+        print()
+        print("A 'fail' finding is what holds a message. Whether that means"
+              " blocked or")
+        print("bounced to the review queue is the manifest's on_fail, not the"
+              " gate's call.")
 
 
 def cmd_demo(args) -> None:
@@ -1183,7 +1367,12 @@ def _user_errors():
             RedactionError, RoleError, WizardAborted, WorkflowError)
 
 
-def main(argv=None) -> None:
+def build_parser() -> argparse.ArgumentParser:
+    """The whole CLI surface, separable from running it.
+
+    Split out so a test can ask whether a command the documentation shows is
+    a command the tool accepts. A tutorial that has drifted is worse than none.
+    """
     p = argparse.ArgumentParser(prog="docketry", description="Local gate-enforced email port")
     p.add_argument("--home", default="./docketry-home", help="installation directory")
     p.add_argument("--version", action="version", version=f"docketry {__version__}")
@@ -1360,10 +1549,36 @@ def main(argv=None) -> None:
     sp = sub.add_parser("anchor", help="print the approval chain's head, to keep off this machine")
     sp.set_defaults(fn=cmd_anchor)
 
+    sp = sub.add_parser("gates", help="list every gate this installation can bind")
+    sp.add_argument("--quiet", action="store_true", help="ids and sources only")
+    sp.set_defaults(fn=cmd_gates)
+
+    sp = sub.add_parser("new-gate", help="write a working gate into <home>/gates/ to edit")
+    sp.add_argument("id", help="the id manifests bind it by, e.g. long-subject")
+    sp.add_argument("--title", help="one-line description for its docstring")
+    sp.add_argument("--force", action="store_true", help="overwrite an existing file")
+    sp.set_defaults(fn=cmd_new_gate)
+
+    sp = sub.add_parser("try-gate", help="run one gate against one message, and print the findings")
+    sp.add_argument("gate")
+    sp.add_argument("--eml", help="a saved .eml message to run it against")
+    sp.add_argument("--subject", default="Test message")
+    sp.add_argument("--from", dest="sender", default="someone@example.com")
+    sp.add_argument("--body", default="")
+    sp.add_argument("--attach", action="append",
+                    help="attachment filename (repeatable)")
+    sp.add_argument("--option", action="append", metavar="KEY=VALUE",
+                    help="override a [gate.options] value (repeatable)")
+    sp.set_defaults(fn=cmd_try_gate)
+
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)
 
-    args = p.parse_args(argv)
+    return p
+
+
+def main(argv=None) -> None:
+    args = build_parser().parse_args(argv)
     try:
         args.fn(args)
     except _user_errors() as e:

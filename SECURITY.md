@@ -53,6 +53,15 @@ these are deliberate and documented:
   against a name; they are an attestation, not authentication. A report that
   "anyone can claim any role" is describing the design, though a report that
   the UI can be reached from another machine is a real finding and we want it.
+- **Gate files in a Docketry home are executed.** `<home>/gates/*.py` is
+  imported and run with the operator's permissions, the same trust already
+  extended to `guardrails.toml`, which dictates what the pipeline does.
+  Docketry loads from that one directory and nowhere else, refuses a file that
+  fails to load rather than skipping it, refuses a gate that would take an id
+  already registered, and prints the source of every gate in `docketry gates`
+  and `docketry doctor`. A report that a home gate can run code is describing
+  the design. A report that a gate can be loaded from outside that directory,
+  or that one can silently replace a shipped gate, is a real finding.
 - **The approval chain detects edits; it does not prevent them.** Approvals are
   hash-chained, and an edit, deletion or reordering stops the chain verifying.
   Anyone who can write to the database can also recompute every digest after

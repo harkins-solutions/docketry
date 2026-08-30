@@ -276,6 +276,23 @@ somebody hands over.
 - Internal: F12 (timeline layers), F14 (roles), F15 (report).
 - External: none — stdlib `tomllib`.
 
+### F17 — Gate authoring kit — SHIPPED v0.17
+The extension point, made usable by someone who has not read this repository.
+`docketry new-gate` writes a working gate into `<home>/gates/`; `try-gate`
+runs one gate against one message with no mailbox, pipeline or store involved;
+`gates` lists what is bindable and where each came from. Gates load from the
+home directory or from an installed package's `docketry.gates` entry point,
+and a file that fails to load stops the command rather than being skipped —
+a gate the operator believes is running and is not is worse than no gate.
+GATES.md is the five-minute walkthrough, and tests/test_first_gate.py runs it,
+so the tutorial cannot drift from the tool.
+
+This is deliberately not a capability feature. If the primitive is good, a
+stranger's gate should be indistinguishable from a shipped one; the two gates
+that ship from `tools/` take exactly this route to prove it.
+- Internal: F1 (the gate protocol and the registry).
+- External: none (stdlib).
+
 ### F10 — Provider connectors (phase 3)
 Optional narrow API connectors (Microsoft Graph, Gmail API) for firms that
 outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
