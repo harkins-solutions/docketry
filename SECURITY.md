@@ -53,6 +53,15 @@ these are deliberate and documented:
   against a name; they are an attestation, not authentication. A report that
   "anyone can claim any role" is describing the design, though a report that
   the UI can be reached from another machine is a real finding and we want it.
+- **The approval chain detects edits; it does not prevent them.** Approvals are
+  hash-chained, and an edit, deletion or reordering stops the chain verifying.
+  Anyone who can write to the database can also recompute every digest after
+  the row they changed — that is a documented limit, not a vulnerability, and
+  `docketry anchor` exists because the fix is a copy of the head kept off the
+  machine. A report that the chain can be recomputed in place is describing
+  the design. A report that `chain_report()` misses an edit it should catch,
+  or that `anchor` prints a head over a chain that does not verify, is a real
+  finding and we want it.
 - **It is local.** Docketry does not send your documents anywhere. A configured
   model must resolve to your own network or the request is refused before it is
   built. If you find a path that sends data off the machine without the

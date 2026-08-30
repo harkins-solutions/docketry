@@ -882,6 +882,17 @@ def cmd_doctor(args) -> None:
         report("PASS", f"roles declared: {', '.join(reg.names())}")
     else:
         report("WARN", "no roles.toml — authority values are not checked")
+    if cfg.store_path.exists():
+        chain = Store(cfg.store_path)
+        try:
+            chain_report = chain.chain_report()
+        finally:
+            chain.close()
+        if not chain_report.ok:
+            report("FAIL", chain_report.summary + " — the approval log has been"
+                           " edited since it was written")
+        elif chain_report.total:
+            report("PASS", chain_report.summary)
     if cfg.llm is not None:
         from .llm import probe
         result = probe(cfg.llm)
@@ -942,7 +953,48 @@ def cmd_digest(args) -> None:
     if s["template_drift_messages"]:
         lines.append(f"  NOTE: {s['template_drift_messages']} template-drift event(s)"
                      " — check portal formats")
+    chain = store.chain_report()
+    if not chain.ok:
+        lines.append(f"  ALERT: {chain.summary}")
+    elif chain.chained:
+        # The daily paste is the cheapest anchor there is: once this line is
+        # in a mailbox the firm does not administer, the log cannot be quietly
+        # rewritten to disagree with it.
+        lines.append(f"  approvals head: {chain.head} ({chain.chained} row(s))")
     print("\n".join(lines))
+
+
+def cmd_anchor(args) -> None:
+    """Print the head of the approval chain, to keep somewhere else.
+
+    This is the half that makes the chain worth anything. The digests live on
+    the same disk as the rows they cover, so anyone who can edit a row can
+    recompute every digest after it. A copy of the head that left the machine
+    cannot be recomputed — a rewritten log then contradicts something the firm
+    already sent, printed or filed, and that contradiction is the finding.
+    """
+    cfg, _, store = _open(args.home)
+    report = store.chain_report()
+    if not report.ok:
+        sys.exit(f"{report.summary} — refusing to anchor a log that no longer"
+                 " verifies. The rows from that point on were edited after"
+                 " they were written; the earlier ones still stand.")
+    stamp = st.utcnow()
+    line = (f"docketry-anchor {stamp} approvals={report.chained}"
+            f" head={report.head}")
+    path = Path(cfg.home) / "anchors.log"
+    with open(path, "a") as fh:
+        fh.write(line + "\n")
+    print(line)
+    if report.unchained:
+        print(f"note: {report.unchained} approval(s) predate the chain and are"
+              " not covered by this anchor")
+    print()
+    print("Keep this line somewhere you cannot edit: mail it to yourself, paste")
+    print("it into a case note, print it. Docketry never sends anything, so")
+    print("moving it off this machine is the one step that is yours.")
+    print(f"(Appended to {path} as well — but that file is on the same disk as")
+    print(" the log it describes, so on its own it proves nothing.)")
 
 
 def cmd_demo(args) -> None:
@@ -1304,6 +1356,9 @@ def main(argv=None) -> None:
     sp.add_argument("--port", type=int, default=0)
     sp.add_argument("--no-browser", action="store_true")
     sp.set_defaults(fn=cmd_demo)
+
+    sp = sub.add_parser("anchor", help="print the approval chain's head, to keep off this machine")
+    sp.set_defaults(fn=cmd_anchor)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)

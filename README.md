@@ -46,7 +46,10 @@ Best practices here are **code, not suggestions**:
 - Gates declare which pipeline stages they are meant for; binding one
   elsewhere is a load-time error, not a footnote in documentation.
 - Every finding and every human approval lands in an audit table on the
-  firm's own disk.
+  firm's own disk, **hash-chained**: each approval carries a digest over its
+  own content and the digest of the row before it, so an edited, deleted or
+  reordered release stops verifying. `docketry doctor` checks the chain and
+  fails if it is broken. Read the next section for what that is worth.
 
 ## What it is not
 
@@ -66,6 +69,34 @@ Best practices here are **code, not suggestions**:
 - **Not legal advice, and not a currency service.** Docketry never claims any
   rule, deadline, or authority is up to date. It checks the inputs you give
   it against the sources you point it at, and it fails loudly.
+
+## The approval log, and what a hash chain is worth
+
+Approvals are chained, and `docketry anchor` prints the head:
+
+```console
+$ docketry anchor
+docketry-anchor 2026-08-29T21:14:03+00:00 approvals=118 head=9f2c...e41
+```
+
+An intact chain means nothing in the log was edited, deleted or reordered
+after it was written. It does **not** mean the log is authentic, and the
+difference matters if this is ever the record being questioned. The database
+sits on the firm's own disk with no key, so anyone who can edit a row can
+recompute every digest after it and hand you a chain that verifies. A test in
+`tests/test_chain.py` does exactly that, on purpose, so nobody mistakes the
+property for more than it is.
+
+What makes a rewritten history detectable is the anchor: a copy of the head
+kept somewhere the editor cannot reach. Mail the line to yourself, paste it
+into a case note, print it, or let `docketry digest` carry it into whatever
+daily summary the firm already sends. Once that line is somewhere the firm
+does not administer, a rewritten log contradicts something that already left
+the building — and that contradiction is the finding.
+
+The chain catches the careless edit on its own. The anchor is what makes the
+deliberate one need an accomplice. Docketry never sends anything, so moving
+the anchor off the machine is the one step that stays yours.
 
 ## Data at rest
 

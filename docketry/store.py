@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -44,6 +45,9 @@ CREATE TABLE IF NOT EXISTS findings(
   summary TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- Approvals are hash-chained: each row carries a digest over its own content
+-- and the digest of the row before it. Read the limit in chain_report() before
+-- deciding what that is worth.
 CREATE TABLE IF NOT EXISTS approvals(
   id INTEGER PRIMARY KEY,
   message_id INTEGER NOT NULL REFERENCES messages(id),
@@ -52,7 +56,9 @@ CREATE TABLE IF NOT EXISTS approvals(
   approved_by TEXT NOT NULL,
   role TEXT NOT NULL,
   note TEXT,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  prev_sha256 TEXT,
+  sha256 TEXT
 );
 CREATE TABLE IF NOT EXISTS notices(
   id INTEGER PRIMARY KEY,
@@ -113,6 +119,58 @@ class StoreIntegrityError(RuntimeError):
     """Stored bytes are missing or no longer match what ingest recorded."""
 
 
+# The chain's starting point, so an empty log still has a definite head.
+GENESIS = "docketry:approvals:v1"
+
+# The fields a row's digest covers. The row id is deliberately not among them:
+# the chain itself fixes the order, and covering an id the database assigns
+# would mean writing the row before knowing what to write.
+CHAINED_FIELDS = ("message_id", "stage", "gate_id", "approved_by", "role",
+                  "note", "created_at")
+
+
+def approval_digest(prev: str, row) -> str:
+    """The digest of one approval, given the one before it."""
+    payload = {k: (row[k] if row[k] is not None else "") for k in CHAINED_FIELDS}
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False)
+    return hashlib.sha256(f"{prev}\n{body}".encode()).hexdigest()
+
+
+@dataclass
+class ChainReport:
+    """What the approval chain can and cannot tell you.
+
+    `ok` means every chained row still hashes to what it claims and points at
+    the row before it, so nothing was edited, deleted or reordered in place.
+
+    It does NOT mean the log is authentic. The database sits on the firm's own
+    disk with no key, so anyone who can edit a row can recompute every digest
+    after it and hand you a chain that verifies. What makes a rewritten
+    history detectable is an anchor kept somewhere the editor cannot reach —
+    `docketry anchor` prints one to mail, print or paste into a case note. The
+    chain catches the careless edit and makes the deliberate one require an
+    accomplice: the copy of the head you already sent.
+    """
+    total: int
+    chained: int
+    unchained: int          # rows written before this store had a chain
+    ok: bool
+    broken_at: int | None
+    head: str
+
+    @property
+    def summary(self) -> str:
+        if self.broken_at is not None:
+            return (f"approval chain BROKEN at row {self.broken_at} —"
+                    f" {self.chained} chained row(s) checked")
+        parts = [f"approval chain intact ({self.chained} row(s))"]
+        if self.unchained:
+            parts.append(f"{self.unchained} predate the chain and cannot be"
+                         " checked")
+        return "; ".join(parts)
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -130,6 +188,16 @@ class Store:
         if "doc_type" not in cols:
             with self.db:
                 self.db.execute("ALTER TABLE attachments ADD COLUMN doc_type TEXT")
+        # Stores written before the chain existed keep their approvals; the
+        # rows are marked unchained rather than back-filled, because a chain
+        # computed after the fact over rows nobody was protecting proves
+        # nothing and would look exactly like one that had been there.
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(approvals)")}
+        with self.db:
+            if "prev_sha256" not in cols:
+                self.db.execute("ALTER TABLE approvals ADD COLUMN prev_sha256 TEXT")
+            if "sha256" not in cols:
+                self.db.execute("ALTER TABLE approvals ADD COLUMN sha256 TEXT")
 
     def close(self) -> None:
         self.db.close()
@@ -196,13 +264,51 @@ class Store:
 
     def add_approval(
         self, msg_id: int, stage: str, gate_id: str, *, approved_by: str, role: str, note: str = ""
-    ) -> None:
+    ) -> str:
+        """Record an approval and extend the chain. Returns the new head."""
+        row = {"message_id": msg_id, "stage": stage, "gate_id": gate_id,
+               "approved_by": approved_by, "role": role, "note": note,
+               "created_at": utcnow()}
+        prev = self.approval_head()
+        digest = approval_digest(prev, row)
         with self.db:
             self.db.execute(
                 "INSERT INTO approvals(message_id, stage, gate_id, approved_by, role,"
-                " note, created_at) VALUES(?,?,?,?,?,?,?)",
-                (msg_id, stage, gate_id, approved_by, role, note, utcnow()),
+                " note, created_at, prev_sha256, sha256) VALUES(?,?,?,?,?,?,?,?,?)",
+                (msg_id, stage, gate_id, approved_by, role, note,
+                 row["created_at"], prev, digest),
             )
+        return digest
+
+    def approval_head(self) -> str:
+        """The digest of the most recent chained approval, or GENESIS."""
+        row = self.db.execute(
+            "SELECT sha256 FROM approvals WHERE sha256 IS NOT NULL"
+            " ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        return row["sha256"] if row else GENESIS
+
+    def chain_report(self) -> ChainReport:
+        """Walk the approval log and re-derive every digest.
+
+        What this proves, and what it does not, is written out in ChainReport.
+        """
+        rows = self.db.execute("SELECT * FROM approvals ORDER BY id").fetchall()
+        prev, chained, unchained, broken_at = GENESIS, 0, 0, None
+        for row in rows:
+            if row["sha256"] is None:
+                unchained += 1
+                continue
+            if broken_at is None and (
+                row["prev_sha256"] != prev
+                or approval_digest(prev, row) != row["sha256"]
+            ):
+                broken_at = row["id"]
+            prev = row["sha256"]
+            chained += 1
+        return ChainReport(total=len(rows), chained=chained,
+                           unchained=unchained, ok=broken_at is None,
+                           broken_at=broken_at, head=prev)
 
     def approval_roles(self, msg_id: int, stage: str, gate_id: str) -> set[str]:
         rows = self.db.execute(

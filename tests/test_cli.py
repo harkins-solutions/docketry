@@ -323,6 +323,76 @@ roles = ["paralegal"]
         self.assertEqual(code, 0, out)
 
 
+class TestAnchor(unittest.TestCase):
+    """The anchor is the half of the chain that leaves the machine."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = str(Path(self.tmp.name) / "home")
+        run_cli("--home", self.home, "init", "--host", "imap.x.com",
+                "--user", "intake@f.com")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    _ingest_held = TestCliQol._ingest_held
+
+    def _store(self):
+        from docketry.config import load_home
+        from docketry.store import Store
+        return Store(load_home(self.home).store_path)
+
+    def _approve(self):
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Dana",
+                            "--role", "paralegal")
+        self.assertEqual(code, 0, out)
+        return mid
+
+    def test_anchor_prints_a_head_and_says_where_to_keep_it(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "anchor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("docketry-anchor", out)
+        self.assertIn("approvals=1", out)
+        self.assertIn("cannot edit", out)
+        # Written to the home too, and honest about what that copy is worth.
+        log = Path(self.home, "anchors.log").read_text()
+        self.assertIn("head=", log)
+        self.assertIn("proves nothing", out)
+
+    def test_anchor_refuses_a_log_that_no_longer_verifies(self):
+        self._approve()
+        store = self._store()
+        with store.db:
+            store.db.execute("UPDATE approvals SET approved_by='Someone Else'")
+        store.close()
+        code, out = run_cli("--home", self.home, "anchor")
+        self.assertNotEqual(code, 0)
+        self.assertIn("BROKEN", out)
+        self.assertFalse(Path(self.home, "anchors.log").exists())
+
+    def test_doctor_fails_loudly_on_an_edited_approval_log(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 0)
+        self.assertIn("approval chain intact", out)
+        store = self._store()
+        with store.db:
+            store.db.execute("UPDATE approvals SET role='attorney'")
+        store.close()
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("has been edited", out)
+
+    def test_the_digest_carries_the_head_so_a_daily_paste_anchors_it(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "digest")
+        self.assertEqual(code, 0)
+        self.assertIn("approvals head:", out)
+
+
 class TestDemo(unittest.TestCase):
     def test_demo_seeds_and_serves(self):
         import threading
