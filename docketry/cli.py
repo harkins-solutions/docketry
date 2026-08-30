@@ -63,7 +63,24 @@ def _open(home: str):
 
 
 def cmd_init(args) -> None:
+    """Set up a home — by asking, unless flags already said everything.
+
+    The wizard is the default because the person doing this at a small firm is
+    not the person who wants to author three TOML files. Passing --host and
+    --user keeps the old one-shot path, so scripts and CI are unaffected.
+    """
+    from . import wizard
     home = Path(args.home)
+    flags_complete = bool(args.host and args.user)
+    if args.wizard or (not flags_complete and not args.no_wizard
+                       and wizard.available()):
+        wizard.run(home)
+        return
+    if not flags_complete and not wizard.available():
+        sys.exit("nothing to read answers from: pass --host and --user"
+                 " (and --store-password if the password goes in the file),"
+                 " or run `docketry init` where someone can answer.")
+
     host = args.host or input("IMAP host of the intake mailbox (e.g. imap.gmail.com): ").strip()
     user = args.user or input("Intake mailbox address (e.g. intake@yourfirm.com): ").strip()
     folder = args.folder or "INBOX"
@@ -1066,9 +1083,10 @@ def _user_errors():
     from .notices import AdapterError
     from .redact import RedactionError
     from .roles import RoleError
+    from .wizard import WizardAborted
     from .workflow import WorkflowError
     return (AdapterError, CiteError, ExtractionError, LLMError, ManifestError,
-            RedactionError, RoleError, WorkflowError)
+            RedactionError, RoleError, WizardAborted, WorkflowError)
 
 
 def main(argv=None) -> None:
@@ -1083,6 +1101,10 @@ def main(argv=None) -> None:
     sp.add_argument("--folder")
     sp.add_argument("--store-password", action="store_true",
                     help="prompt for the password and store it in config.toml (0600)")
+    sp.add_argument("--wizard", action="store_true",
+                    help="ask the setup questions even if --host/--user were given")
+    sp.add_argument("--no-wizard", action="store_true",
+                    help="write a starter manifest instead of asking")
     sp.set_defaults(fn=cmd_init)
 
     sp = sub.add_parser("poll", help="sweep the intake mailbox once")

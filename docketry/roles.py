@@ -81,7 +81,16 @@ class Registry:
 
 
 def load_roles(path: str | Path) -> Registry:
-    data = tomllib.loads(Path(path).read_text())
+    return parse_roles(tomllib.loads(Path(path).read_text()))
+
+
+def parse_roles(data: dict) -> Registry:
+    """Validate an already-parsed registry. Same rules, no file needed.
+
+    The wizard builds one in memory and checks it before writing anything, and
+    it has to be checked by THIS code — a second construction path that agreed
+    with itself would let the wizard write a file that load_roles refuses.
+    """
     reg = Registry()
     for i, r in enumerate(data.get("role", []), start=1):
         name = (r.get("name") or "").strip()
