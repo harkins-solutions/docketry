@@ -959,11 +959,15 @@ def cmd_demo(args) -> None:
     from .store import Store
     from .webui import make_server
 
+    from .roles import load_roles
+
     home = Path(tempfile.mkdtemp(prefix="docketry-demo-"))
     (home / "guardrails.toml").write_text(DEMO_MANIFEST)
-    pipeline = load_manifest(home / "guardrails.toml")
+    (home / "roles.toml").write_text(DEMO_ROLES)
+    registry = load_roles(home / "roles.toml")
+    pipeline = load_manifest(home / "guardrails.toml", registry)
     store = Store(home / "store")
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=registry)
     adapter_stack = nmod.stack()
 
     def mail(from_addr, subject, body, attach=None):
@@ -994,6 +998,9 @@ def cmd_demo(args) -> None:
              "a redesigned portal template this adapter has never seen\n"),
         mail("stranger@sketchy.example", "Invoice attached — pay today",
              "wire transfer please", attach="invoice.pdf"),
+        mail("reception@demofirm.example", "New matter — conflicts check",
+             "Walk-in this morning wants to sue Roberta Vance over the"
+             " Riverside build. Pulling the file now.\n"),
     ]
     for raw in samples:
         env = parse_message(raw, source="demo", fetched_at=st.utcnow())
@@ -1011,12 +1018,21 @@ def cmd_demo(args) -> None:
             status = runner.advance(msg_id)
     store.close()
 
-    server = make_server(home / "store", pipeline, port=args.port)
+    server = make_server(home / "store", pipeline, port=args.port,
+                         registry=registry)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Demo home: {home} (disposable)")
-    print(f"Two messages passed clean; three are held — a drifted portal template,")
-    print(f"an unknown sender, and its attachment. Release them from the dashboard:")
-    print(f"  {url}   (Ctrl-C to stop)")
+    print("Three messages passed clean. Three stopped, and the two that matter")
+    print("are the reason a firm installs this:")
+    print("  - a conflicts email naming a screened party. BLOCKED by the ethical")
+    print("    wall. Only an attorney can release it, and the release is a row")
+    print("    with a name and a timestamp — which is what a grievance asks for.")
+    print("  - a court e-service notice whose portal changed its template. Held")
+    print("    rather than guessed at: a misread hearing date is a malpractice")
+    print("    claim, an unread one is a phone call.")
+    print("  - an unknown sender with an attachment. Routine hygiene, and the")
+    print("    least interesting thing here.")
+    print(f"Release them from the dashboard: {url}   (Ctrl-C to stop)")
     if not args.no_browser:
         webbrowser.open(url)
     try:
@@ -1025,9 +1041,40 @@ def cmd_demo(args) -> None:
         print("\ndemo stopped; nothing was saved outside", home)
 
 
+DEMO_ROLES = """\
+[[role]]
+name = "paralegal"
+description = "Clears routine intake holds."
+may_release = ["sender-scope", "attachment-policy", "notice-parser",
+               "provenance-stamp"]
+
+[[role]]
+name = "attorney"
+description = "Releases anything, including a conflict hold."
+may_release = ["*"]
+"""
+
 DEMO_MANIFEST = """\
 [pipeline]
 stages = ["ingest", "review"]
+
+# The ethical wall. Anything naming a screened party stops here, and only a
+# recorded release by an attorney moves it.
+[[gate]]
+id = "name-screen"
+binds_to = ["ingest"]
+on_fail = "block"
+authority = "attorney"
+
+[gate.options]
+terms = ["Roberta Vance"]
+note = "ethical wall"
+
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
 
 [[gate]]
 id = "sender-scope"
@@ -1036,16 +1083,11 @@ on_fail = "bounce"
 authority = "paralegal"
 
 [gate.options]
-allow = ["@myflcourtaccess.com", "@uscourts.gov", "@circuit19.example"]
+allow = ["@myflcourtaccess.com", "@uscourts.gov", "@circuit19.example",
+         "@demofirm.example"]
 
 [[gate]]
 id = "attachment-policy"
-binds_to = ["ingest"]
-on_fail = "bounce"
-authority = "paralegal"
-
-[[gate]]
-id = "notice-parser"
 binds_to = ["ingest"]
 on_fail = "bounce"
 authority = "paralegal"

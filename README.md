@@ -13,6 +13,28 @@ legal workflow tools (document classification, e-service notice parsing,
 citation verification, draft linting). Each plugs into the port as a **gate**
 in a declared pipeline.
 
+## Why a firm installs this
+
+Two of the gates are the reason. The rest are hygiene.
+
+**The ethical wall.** List the parties or matters a reviewer must not see
+flowing through intake unreviewed. Anything mentioning one stops — not warns,
+stops — and the only thing that moves it is a recorded release by the role
+your manifest names. What that leaves behind is a row saying who released it
+and when, on the firm's own disk. A screen that maps to a bar rule is worth
+having; a screen you can show someone the record of is worth more, and that
+record is the thing a grievance actually asks about.
+
+**Court e-service.** Docketry parses service and docket notices into case
+numbers, document titles and dates — and holds any notice it cannot read
+instead of guessing. A misread hearing date is a malpractice claim. An unread
+one is a phone call. When a portal changes its template, the queue says so
+rather than quietly extracting nothing.
+
+Everything else here — attachment types, sender scope, size caps — is
+pipeline hygiene. Useful, worth having on, and not why anyone would install
+this. `docketry demo` shows the two above, and the rest as an afterthought.
+
 ## What makes it different
 
 Best practices here are **code, not suggestions**:
@@ -96,18 +118,20 @@ $ pip install docketry   # or grab a one-file executable from Releases
 $ docketry demo
 ```
 
-`demo` seeds a disposable home with sample traffic — a clean service notice,
-a federal NEF, a hearing notice, a drifted portal template, and an unknown
-sender — and opens the local dashboard so you can watch the gates hold the
-right three and release them yourself. No mailbox, no configuration, nothing
-saved. (Downloadable one-file executables for Windows/macOS/Linux attach to
-tagged releases — double-clicking one opens this same demo.)
+`demo` seeds a disposable home with sample traffic and opens the local
+dashboard. Three messages pass clean. Three stop: a conflicts email naming a
+screened party (blocked by the wall, attorney-only release), a court e-service
+notice whose portal changed its template (held rather than guessed at), and an
+unknown sender with an attachment (hygiene). You release them yourself and
+watch the audit rows appear. No mailbox, no configuration, nothing saved.
+(Downloadable one-file executables for Windows/macOS/Linux attach to tagged
+releases — double-clicking one opens this same demo.)
 
 ## Quickstart
 
 ```console
 $ pip install docketry
-$ docketry init --host imap.gmail.com --user intake@yourfirm.com
+$ docketry init        # asks; writes config.toml, guardrails.toml, roles.toml
 $ export DOCKETRY_IMAP_PASSWORD='app-password-here'
 $ docketry poll        # sweep the intake mailbox once
 $ docketry queue       # see anything a gate held for review
@@ -115,9 +139,17 @@ $ docketry approve 3 --gate sender-scope --by "Dana" --role paralegal
 $ docketry status
 ```
 
-The pipeline is declared in `guardrails.toml` in your Docketry home directory
-(see `examples/guardrails.toml`). Reading the intake mailbox is strictly
-read-only: messages are never marked, moved, or deleted.
+`init` asks nine questions in plain words — which mailbox, what your firm
+calls the person who reviews intake, who can release a conflict hold, which
+names are behind the wall — and writes the three config files from the
+answers, commented, so nobody has to author TOML to get started. It guesses
+the IMAP host from the address and never writes a home that refuses to load.
+Pass `--host` and `--user` to skip the questions for scripted installs.
+
+Everything it writes is an ordinary file you can edit afterwards: the pipeline
+lives in `guardrails.toml` in your Docketry home (see `examples/`), the roles
+in `roles.toml`. Reading the intake mailbox is strictly read-only: messages
+are never marked, moved, or deleted.
 
 ## Skills starter pack
 

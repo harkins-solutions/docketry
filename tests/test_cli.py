@@ -341,8 +341,8 @@ class TestDemo(unittest.TestCase):
         from docketry import webui as webui_mod
         real_make = webui_mod.make_server
 
-        def capture_make(store_path, pipeline, host="127.0.0.1", port=0):
-            server = real_make(store_path, pipeline, host=host, port=port)
+        def capture_make(store_path, pipeline, host="127.0.0.1", port=0, **kw):
+            server = real_make(store_path, pipeline, host=host, port=port, **kw)
             started["server"] = server
             raise KeyboardInterrupt  # unwind out of serve_forever path
 
@@ -365,5 +365,11 @@ class TestDemo(unittest.TestCase):
         self.assertIn("Held for review", body)
         self.assertIn("sketchy.example", body)          # stranger held
         self.assertIn("did not extract", body)          # drifted template held
+        # The two the demo exists to show: the wall, and the unreadable notice.
+        self.assertIn("ethical wall", body)
+        self.assertIn("conflicts check", body)
+        # A blocked conflict is releasable by an attorney, not by the
+        # paralegal the routine gates name — the queue has to offer that.
+        self.assertIn('<option value="attorney"', body)
         self.assertIn("Hearing Scheduled", body.replace("&#x27;", "'")) if "Hearing" in body else None
         self.assertIn("service_notice", body)
