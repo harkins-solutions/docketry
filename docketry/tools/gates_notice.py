@@ -16,7 +16,6 @@ from . import notices
 from ..core.gates import register
 
 
-@register
 class NoticeParser:
     id = "notice-parser"
     allowed_stages = {"ingest"}
@@ -57,3 +56,9 @@ class NoticeParser:
                 )
             )
         return findings
+
+
+# Registered explicitly rather than by decorator, because this gate ships
+# with Docketry but is not part of the port — it plugs in from tools/, the
+# same way yours does. `docketry gates` says so.
+register(NoticeParser, source="built-in (tools)")

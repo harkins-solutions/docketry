@@ -32,6 +32,10 @@ notice parser and the document classifier plug in as gates by registering
 with the port's registry — the same route a third-party gate takes, so the
 extension story is the one the shipped code already uses.
 
+**[ARCHITECTURE.md](ARCHITECTURE.md)** draws the whole thing: what happens to
+a message, where a gate sits, how the package is bounded, and what the audit
+chain does and does not prove.
+
 ## Why a firm installs this
 
 Two of the gates are the reason. The rest are hygiene.
@@ -53,6 +57,25 @@ rather than quietly extracting nothing.
 Everything else here — attachment types, sender scope, size caps — is
 pipeline hygiene. Useful, worth having on, and not why anyone would install
 this. `docketry demo` shows the two above, and the rest as an afterthought.
+
+## Write a gate in five minutes
+
+A gate is one class with one method. Everything Docketry enforces is one —
+the ethical wall, the notice parser — and nothing shipped has a privilege
+yours does not.
+
+```console
+$ docketry new-gate long-subject     # writes a working gate into <home>/gates/
+$ docketry try-gate long-subject --subject "a subject with rather too many words in it"
+result:  [fail] subject is 9 words, over the 5 this pipeline accepts
+$ docketry gates                     # what is bindable, and where each came from
+```
+
+Then add four lines to `guardrails.toml` and it runs on every message, held
+and released exactly like the shipped ones. Drop a `.py` file in your home's
+`gates/` directory, or ship it as a pip package with a `docketry.gates` entry
+point. **[GATES.md](GATES.md)** is the five-minute walkthrough and the
+reference.
 
 ## What makes it different
 
