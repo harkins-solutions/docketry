@@ -20,19 +20,19 @@ import tomllib
 from pathlib import Path
 
 from . import __version__
-from . import store as st
-from .config import MANIFEST_NAME, load_home, write_config
-from .envelope import parse_message
-from .mailbox import IntakeMailbox
-from .manifest import DEFAULT_MANIFEST, load_manifest
-from . import notices as notices_mod
-from .pipeline import GateRefusal, Runner
-from .store import Store
+from .core import store as st
+from .core.config import MANIFEST_NAME, load_home, write_config
+from .core.envelope import parse_message
+from .core.mailbox import IntakeMailbox
+from .core.manifest import DEFAULT_MANIFEST, load_manifest
+from .tools import notices as notices_mod
+from .core.pipeline import GateRefusal, Runner
+from .core.store import Store
 
 
 def _registry(home):
     """The firm's role registry, when it has written one."""
-    from .roles import RoleError, load_if_present
+    from .core.roles import RoleError, load_if_present
     try:
         return load_if_present(home)
     except RoleError as e:
@@ -41,7 +41,7 @@ def _registry(home):
 
 def _directory(home, registry=None):
     """The firm's contacts directory, when it has written one."""
-    from .contacts import ContactError, load_if_present
+    from .tools.contacts import ContactError, load_if_present
     try:
         return load_if_present(home, registry)
     except ContactError as e:
@@ -130,7 +130,7 @@ def cmd_poll(args) -> None:
             if msg_id is None:
                 continue
             ingested += 1
-            from .classify import classify as _classify
+            from .tools.classify import classify as _classify
             for att in store.attachments_for(msg_id):
                 label, tier = _classify(att["filename"])
                 if tier != "low":
@@ -179,7 +179,7 @@ def cmd_approve(args) -> None:
     if binding is None:
         sys.exit(f"gate '{args.gate}' is not bound at stage '{row['stage']}'"
                  f" (bound here: {', '.join(sorted(stage_bindings)) or 'none'})")
-    from .roles import refuse_approval
+    from .core.roles import refuse_approval
     refusal = refuse_approval(cfg.registry, person=args.by, role=args.role,
                               gate_id=args.gate, required=binding.authority)
     if refusal:
@@ -229,7 +229,7 @@ def cmd_notices(args) -> None:
 
 def _parse_box(spec: str):
     """page:x0,y0,x1,y1 — fractions of the page, top-left origin."""
-    from .redact import Box, RedactionError
+    from .tools.redact import Box, RedactionError
     try:
         page, rest = spec.split(":", 1)
         x0, y0, x1, y1 = (float(v) for v in rest.split(","))
@@ -242,7 +242,7 @@ def _parse_box(spec: str):
 
 def cmd_redact_scan(args) -> None:
     """PREVIEW only. Writes nothing."""
-    from .redact import RedactionError, find_terms
+    from .tools.redact import RedactionError, find_terms
     try:
         hits = find_terms(args.file, args.term)
     except RedactionError as e:
@@ -260,7 +260,7 @@ def cmd_redact_scan(args) -> None:
 
 
 def cmd_redact_apply(args) -> None:
-    from .redact import RedactionError, apply, find_terms
+    from .tools.redact import RedactionError, apply, find_terms
     boxes = []
     try:
         if args.term:
@@ -311,7 +311,7 @@ def cmd_redact_apply(args) -> None:
 
 
 def cmd_redact_verify(args) -> None:
-    from .redact import verify
+    from .tools.redact import verify
     survivors = verify(args.file, args.term)
     if survivors:
         print(_sev("FAIL") + "  still extractable: " + ", ".join(survivors))
@@ -321,14 +321,14 @@ def cmd_redact_verify(args) -> None:
 
 
 def _timeline(args):
-    from .timeline import build
+    from .tools.timeline import build
     cfg, _, store = _open(args.home)
     return build(store, args.case, threads=args.thread or None,
                  directory=cfg.directory)
 
 
 def cmd_timeline(args) -> None:
-    from .timeline import LAYERS
+    from .tools.timeline import LAYERS
     tl = _timeline(args)
     layers = tuple(args.layer) if args.layer else LAYERS
     rows = tl.sorted_entries(layers, thread=args.in_thread)
@@ -350,8 +350,8 @@ def cmd_timeline(args) -> None:
 
 
 def cmd_timeline_export(args) -> None:
-    from .export import to_docx, to_xlsx
-    from .timeline import LAYERS
+    from .tools.export import to_docx, to_xlsx
+    from .tools.timeline import LAYERS
     tl = _timeline(args)
     layers = tuple(args.layer) if args.layer else LAYERS
     out = Path(args.out)
@@ -366,7 +366,7 @@ def cmd_timeline_export(args) -> None:
 
 
 def cmd_docket_reconcile(args) -> None:
-    from .reconcile import parse_docket, reconcile
+    from .tools.reconcile import parse_docket, reconcile
     tl = _timeline(args)
     text = Path(args.docket).read_text(errors="replace")
     lines = parse_docket(text)
@@ -397,7 +397,7 @@ def cmd_docket_reconcile(args) -> None:
 
 def cmd_llm_check(args) -> None:
     """Is a local model configured, reachable, and actually local?"""
-    from .llm import probe
+    from .tools.llm import probe
     cfg, _, _ = _open(args.home)
     if cfg.llm is None:
         print("no model configured — Docketry works fully without one")
@@ -418,12 +418,12 @@ def cmd_llm_check(args) -> None:
 
 
 def _article(word):
-    from .workflow import article
+    from .tools.workflow import article
     return article(word)
 
 
 def _matter_or_exit(store, case):
-    from .timeline import normalise_case_number
+    from .tools.timeline import normalise_case_number
     row = store.get_matter(normalise_case_number(case))
     if row is None:
         sys.exit(f"no matter for {case} — open it with: docketry matter-open {case}")
@@ -444,8 +444,8 @@ def cmd_matters(args) -> None:
 
 
 def cmd_matter_open(args) -> None:
-    from .timeline import normalise_case_number
-    from .workflow import WorkflowError, workflow_for
+    from .tools.timeline import normalise_case_number
+    from .tools.workflow import WorkflowError, workflow_for
     cfg, _, store = _open(args.home)
     try:
         wf = workflow_for(cfg.home, args.type, cfg.registry)
@@ -459,7 +459,7 @@ def cmd_matter_open(args) -> None:
 
 
 def cmd_matter_status(args) -> None:
-    from .workflow import WorkflowError, available, facts_from_store, workflow_for
+    from .tools.workflow import WorkflowError, available, facts_from_store, workflow_for
     cfg, _, store = _open(args.home)
     row = _matter_or_exit(store, args.case)
     try:
@@ -487,7 +487,7 @@ def cmd_matter_status(args) -> None:
 
 
 def cmd_matter_advance(args) -> None:
-    from .workflow import WorkflowError, check, facts_from_store, workflow_for
+    from .tools.workflow import WorkflowError, check, facts_from_store, workflow_for
     cfg, _, store = _open(args.home)
     row = _matter_or_exit(store, args.case)
     try:
@@ -515,7 +515,7 @@ def cmd_matter_advance(args) -> None:
 
 def cmd_workflow_check(args) -> None:
     """The sandbox: run a workflow and watch where it holds."""
-    from .workflow import MatterFacts, WorkflowError, load_workflow, simulate
+    from .tools.workflow import MatterFacts, WorkflowError, load_workflow, simulate
     try:
         wf = load_workflow(args.file)
     except WorkflowError as e:
@@ -570,7 +570,7 @@ def cmd_roles(args) -> None:
 
 def cmd_report(args) -> None:
     """Pipeline health. Counted by role and by gate, never by person."""
-    from .report import build
+    from .tools.report import build
     cfg, pipeline, store = _open(args.home)
     rep = build(store, pipeline, days=args.days,
                 firm_domains=cfg.firm_domains, directory=cfg.directory)
@@ -642,7 +642,7 @@ def cmd_report(args) -> None:
 
 
 def cmd_contacts(args) -> None:
-    from .contacts import KINDS
+    from .tools.contacts import KINDS
     cfg, _, _ = _open(args.home)
     d = cfg.directory
     if d is None:
@@ -663,8 +663,8 @@ def cmd_contacts(args) -> None:
 
 
 def cmd_verify_draft(args) -> None:
-    from .cite import CiteError, verify, extract_citations
-    from .extract import ExtractionError, extract_path
+    from .tools.cite import CiteError, verify, extract_citations
+    from .tools.extract import ExtractionError, extract_path
 
     try:
         text = extract_path(args.file).full_text
@@ -673,7 +673,7 @@ def cmd_verify_draft(args) -> None:
     try:
         if args.offline:
             raise CiteError("offline requested")
-        from .cite_client import CourtListenerClient
+        from .tools.cite_client import CourtListenerClient
         client = CourtListenerClient(token=args.token)
         report = verify(text, client)
         client.close()
@@ -681,7 +681,7 @@ def cmd_verify_draft(args) -> None:
         if not args.offline:
             print(f"network verification unavailable ({e}); extraction-only mode")
         try:
-            from .cite import citation_inventory
+            from .tools.cite import citation_inventory
             cites, n_short = citation_inventory(text)
         except CiteError as e2:
             sys.exit(str(e2))
@@ -706,8 +706,8 @@ def cmd_verify_draft(args) -> None:
 
 
 def cmd_lint(args) -> None:
-    from .extract import ExtractionError, extract_path
-    from .lint import RulepackError, lint, load_rulepack
+    from .tools.extract import ExtractionError, extract_path
+    from .tools.lint import RulepackError, lint, load_rulepack
 
     try:
         text = extract_path(args.file).full_text
@@ -732,8 +732,8 @@ def cmd_lint(args) -> None:
 
 
 def cmd_classify(args) -> None:
-    from .classify import classify
-    from .extract import ExtractionError, extract_path
+    from .tools.classify import classify
+    from .tools.extract import ExtractionError, extract_path
 
     path = Path(args.file)
     text, degraded = "", ""
@@ -815,8 +815,8 @@ def cmd_watch(args) -> None:
 
 def cmd_doctor(args) -> None:
     import shutil
-    from .config import load_home
-    from .manifest import ManifestError, load_manifest as _lm
+    from .core.config import load_home
+    from .core.manifest import ManifestError, load_manifest as _lm
 
     ok = True
 
@@ -849,7 +849,7 @@ def cmd_doctor(args) -> None:
         report("FAIL", f"no {cfg.manifest_path.name} — run: docketry init")
     adapters = home / "adapters.toml"
     if adapters.exists():
-        from .notices import AdapterError, load_adapters_file
+        from .tools.notices import AdapterError, load_adapters_file
         try:
             n = len(load_adapters_file(adapters))
             report("PASS", f"firm adapters: {n} loaded")
@@ -894,7 +894,7 @@ def cmd_doctor(args) -> None:
         elif chain_report.total:
             report("PASS", chain_report.summary)
     if cfg.llm is not None:
-        from .llm import probe
+        from .tools.llm import probe
         result = probe(cfg.llm)
         if result.startswith("REFUSED"):
             report("FAIL", f"model endpoint is NOT local — {result}")
@@ -1003,15 +1003,15 @@ def cmd_demo(args) -> None:
     import webbrowser
     from email.message import EmailMessage
 
-    from . import notices as nmod
-    from .classify import classify as _classify
-    from .envelope import parse_message
-    from .manifest import load_manifest
-    from .pipeline import Runner
-    from .store import Store
+    from .tools import notices as nmod
+    from .tools.classify import classify as _classify
+    from .core.envelope import parse_message
+    from .core.manifest import load_manifest
+    from .core.pipeline import Runner
+    from .core.store import Store
     from .webui import make_server
 
-    from .roles import load_roles
+    from .core.roles import load_roles
 
     home = Path(tempfile.mkdtemp(prefix="docketry-demo-"))
     (home / "guardrails.toml").write_text(DEMO_MANIFEST)
@@ -1170,15 +1170,15 @@ def _user_errors():
     tuple keeps its traceback on purpose: an unexpected crash is a bug in
     Docketry, and swallowing it into a tidy message is how bugs go unreported.
     """
-    from .cite import CiteError
-    from .extract import ExtractionError
-    from .llm import LLMError
-    from .manifest import ManifestError
-    from .notices import AdapterError
-    from .redact import RedactionError
-    from .roles import RoleError
+    from .tools.cite import CiteError
+    from .tools.extract import ExtractionError
+    from .tools.llm import LLMError
+    from .core.manifest import ManifestError
+    from .tools.notices import AdapterError
+    from .tools.redact import RedactionError
+    from .core.roles import RoleError
     from .wizard import WizardAborted
-    from .workflow import WorkflowError
+    from .tools.workflow import WorkflowError
     return (AdapterError, CiteError, ExtractionError, LLMError, ManifestError,
             RedactionError, RoleError, WizardAborted, WorkflowError)
 

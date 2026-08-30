@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.envelope import Envelope
-from docketry.store import GENESIS, Store, approval_digest
+from docketry.core.envelope import Envelope
+from docketry.core.store import GENESIS, Store, approval_digest
 
 
 def env(i=0):

@@ -20,12 +20,27 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .llm import LLMConfig
 from .mailbox import MailboxConfig
 
 CONFIG_NAME = "config.toml"
 MANIFEST_NAME = "guardrails.toml"
 STORE_DIR = "store"
+
+# Two minutes: a local model on modest hardware answering a long prompt.
+DEFAULT_LLM_TIMEOUT = 120.0
+
+
+@dataclass
+class LLMConfig:
+    """Where the firm's own model lives, if it configured one.
+
+    The settings live here rather than in the client that uses them, so the
+    port can read a config file without importing anything from tools. The
+    client that vets the endpoint and speaks to it is docketry.tools.llm.
+    """
+    base_url: str
+    model: str
+    timeout: float = DEFAULT_LLM_TIMEOUT
 
 
 @dataclass

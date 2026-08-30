@@ -10,10 +10,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..envelope import Envelope
-from ..pipeline import Finding, SEVERITY_FAIL, SEVERITY_INFO
-from .. import notices
-from . import register
+from ..core.envelope import Envelope
+from ..core.pipeline import Finding, SEVERITY_FAIL, SEVERITY_INFO
+from . import notices
+from ..core.gates import register
 
 
 @register

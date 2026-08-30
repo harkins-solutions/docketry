@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from docketry import cli
-from docketry import mailbox as mb
+from docketry.core import mailbox as mb
 
 try:
     import eyecite  # noqa: F401
@@ -159,11 +159,11 @@ class TestCliQol(unittest.TestCase):
 
     def _ingest_held(self):
         import json as _json
-        from docketry.config import load_home
-        from docketry.manifest import load_manifest
-        from docketry.envelope import parse_message
-        from docketry.pipeline import Runner
-        from docketry.store import Store, utcnow
+        from docketry.core.config import load_home
+        from docketry.core.manifest import load_manifest
+        from docketry.core.envelope import parse_message
+        from docketry.core.pipeline import Runner
+        from docketry.core.store import Store, utcnow
         m = EmailMessage()
         m["From"] = "stranger@x.net"; m["To"] = "intake@f.com"; m["Subject"] = "inv"
         m.set_content("pay")
@@ -266,8 +266,8 @@ roles = ["paralegal"]
     _ingest_held = TestCliQol._ingest_held
 
     def _status(self, mid):
-        from docketry.config import load_home
-        from docketry.store import Store
+        from docketry.core.config import load_home
+        from docketry.core.store import Store
         store = Store(load_home(self.home).store_path)
         try:
             return store.get_message(mid)["status"]
@@ -338,8 +338,8 @@ class TestAnchor(unittest.TestCase):
     _ingest_held = TestCliQol._ingest_held
 
     def _store(self):
-        from docketry.config import load_home
-        from docketry.store import Store
+        from docketry.core.config import load_home
+        from docketry.core.store import Store
         return Store(load_home(self.home).store_path)
 
     def _approve(self):

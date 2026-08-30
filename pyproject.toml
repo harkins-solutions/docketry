@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "docketry"
-version = "0.15.1"
+version = "0.16.0"
 description = "A local, gate-enforced port that a law firm's email flows into. Base layer for small composable legal workflow tools."
 readme = "README.md"
 license = { file = "LICENSE" }

@@ -1,4 +1,10 @@
-"""Gate registry: manifests reference gates by id; plugins register here."""
+"""Gate registry: manifests reference gates by id; plugins register here.
+
+The port ships the plug board and the hygiene gates. The notice parser and
+the document classifier are tools that plug in — they live in docketry/tools
+and register themselves when the package is imported, which is the same
+route a third-party gate takes.
+"""
 from __future__ import annotations
 
 _REGISTRY: dict[str, type] = {}
@@ -24,5 +30,5 @@ def all_ids() -> list[str]:
     return sorted(_REGISTRY)
 
 
-# Built-ins register on import.
-from . import builtin, classifier, notice  # noqa: E402,F401
+# The hygiene gates register on import; nothing here needs a tool.
+from . import builtin  # noqa: E402,F401

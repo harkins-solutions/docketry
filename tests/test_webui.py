@@ -8,11 +8,11 @@ import unittest
 from pathlib import Path
 from urllib.parse import urlencode
 
-from docketry import store as st
-from docketry.envelope import Attachment, Envelope
-from docketry.manifest import load_manifest
-from docketry.pipeline import Runner
-from docketry.store import Store
+from docketry.core import store as st
+from docketry.core.envelope import Attachment, Envelope
+from docketry.core.manifest import load_manifest
+from docketry.core.pipeline import Runner
+from docketry.core.store import Store
 from docketry.webui import make_server
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
@@ -145,7 +145,7 @@ class TestWebUIWithARegistry(unittest.TestCase):
     """
 
     def setUp(self):
-        from docketry.roles import load_roles
+        from docketry.core.roles import load_roles
         self.tmp = tempfile.TemporaryDirectory()
         roles = Path(self.tmp.name) / "roles.toml"
         roles.write_text('[[role]]\nname="paralegal"\nmay_release=["sender-scope"]\n'
@@ -266,7 +266,7 @@ class TestAdapterPanel(unittest.TestCase):
         return self._post("/adapters/save", data)
 
     def test_saving_writes_a_file_the_real_loader_accepts(self):
-        from docketry.notices import load_adapters_file
+        from docketry.tools.notices import load_adapters_file
         code, body = self._save()
         self.assertEqual(code, 200)
         self.assertIn("Saved", body)

@@ -21,7 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .envelope import Envelope, parse_message
+from ..core.envelope import Envelope, parse_message
 from .notices import NOTICE_TYPES, AdapterError, PatternAdapter, _rx
 
 # "Case Number: 8:26-cv-01234" — a label, a colon, a value. Anchored to the

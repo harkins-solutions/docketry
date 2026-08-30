@@ -33,7 +33,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-DEFAULT_TIMEOUT = 120.0
+# The settings live in core.config; this module is the client for them.
+from ..core.config import DEFAULT_LLM_TIMEOUT, LLMConfig  # noqa: F401
+
+DEFAULT_TIMEOUT = DEFAULT_LLM_TIMEOUT
 DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
@@ -43,13 +46,6 @@ class LLMError(RuntimeError):
 
 class RemoteEndpointRefused(LLMError):
     """The configured endpoint is not on the firm's own network."""
-
-
-@dataclass
-class LLMConfig:
-    base_url: str
-    model: str
-    timeout: float = DEFAULT_TIMEOUT
 
 
 @dataclass

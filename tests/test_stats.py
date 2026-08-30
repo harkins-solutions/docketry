@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry import store as st
-from docketry.envelope import Envelope
-from docketry.manifest import load_manifest
-from docketry.pipeline import Runner
-from docketry.store import Store
+from docketry.core import store as st
+from docketry.core.envelope import Envelope
+from docketry.core.manifest import load_manifest
+from docketry.core.pipeline import Runner
+from docketry.core.store import Store
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
 
@@ -34,7 +34,7 @@ class TestStats(unittest.TestCase):
                                         "stranger@x.net"]):
                 e = env(i, sender)
                 mid = store.ingest(e, first_stage="ingest")
-                from docketry import notices as nmod
+                from docketry.tools import notices as nmod
                 res = nmod.parse(e, nmod.stack())
                 if res is not None:
                     store.add_notice(mid, res.adapter, res.notice_type,

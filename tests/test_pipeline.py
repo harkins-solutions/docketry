@@ -2,10 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry import store as st
-from docketry.envelope import Attachment, Envelope
-from docketry.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
-from docketry.store import Store, StoreIntegrityError
+from docketry.core import store as st
+from docketry.core.envelope import Attachment, Envelope
+from docketry.core.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
+from docketry.core.store import Store, StoreIntegrityError
 
 
 def env(attachments=None, from_addr="portal@court.gov"):

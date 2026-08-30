@@ -5,6 +5,27 @@
 [pipeline]
 stages = ["ingest", "review"]
 
+# The ethical wall. Uncomment, list your own screened parties, and anything
+# mentioning one stops here — released only by the role named below, on the
+# record. The terms live only in this local file and never leave the machine.
+#
+# [[gate]]
+# id = "name-screen"
+# binds_to = ["ingest"]
+# on_fail = "block"
+# authority = "attorney"
+#
+# [gate.options]
+# terms = ["Walled Party LLC", "Confidential Matter Name"]
+# note = "ethical wall"
+
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"          # a court notice that no longer parses is reviewed, not dropped
+authority = "paralegal"
+
+# Below here is pipeline hygiene: what intake will accept, and from whom.
 [[gate]]
 id = "sender-scope"
 binds_to = ["ingest"]
@@ -29,21 +50,4 @@ binds_to = ["ingest"]
 on_fail = "warn"
 authority = "paralegal"
 
-[[gate]]
-id = "notice-parser"
-binds_to = ["ingest"]
-on_fail = "bounce"          # a court notice that no longer parses is reviewed, not dropped
-authority = "paralegal"
-
-# Optional: sender deny list (checked before allow) and a name screen for
-# ethical walls / conflict screening. The terms live only in this local file.
-#
-# [[gate]]
-# id = "name-screen"
-# binds_to = ["ingest"]
-# on_fail = "block"
-# authority = "attorney"
-#
-# [gate.options]
-# note = "ethical wall"
-# terms = ["Walled Party LLC", "Confidential Matter Name"]
+# Optional: a sender deny list, checked before the allow list above.

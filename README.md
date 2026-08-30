@@ -11,7 +11,26 @@ the firm didn't send across the boundary.
 Docketry is the **base layer** of a family of small, composable open-source
 legal workflow tools (document classification, e-service notice parsing,
 citation verification, draft linting). Each plugs into the port as a **gate**
-in a declared pipeline.
+in a declared pipeline — and the package is laid out so you can check that
+rather than take it on faith:
+
+```
+docketry/
+  core/     the port — envelope, pipeline, store, manifest, roles, config,
+            and the gate registry with the hygiene gates.  ~1,700 lines.
+  tools/    the family — classification, notice parsing, citation work,
+            redaction, timelines, exports, reconciliation, linting, matter
+            workflow, contacts, reporting, and the optional local model.
+  cli.py    the command line, the review UI, and the setup wizard.
+  webui.py
+  wizard.py
+```
+
+`tools/` imports `core/`. `core/` imports nothing above it, and
+`tests/test_boundaries.py` fails the build if that stops being true. The
+notice parser and the document classifier plug in as gates by registering
+with the port's registry — the same route a third-party gate takes, so the
+extension story is the one the shipped code already uses.
 
 ## Why a firm installs this
 

@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.workflow import (
+from docketry.tools.workflow import (
     Condition,
     MatterFacts,
     WorkflowError,
@@ -134,12 +134,12 @@ class TestFactsFromTheRecord(unittest.TestCase):
     """Gates read what is actually filed, and never assume."""
 
     def setUp(self):
-        from docketry.store import Store
+        from docketry.core.store import Store
         self.tmp = tempfile.mkdtemp()
         self.store = Store(self.tmp)
 
     def _notice(self, msgid, case, ntype="service_notice"):
-        from docketry.envelope import parse_message
+        from docketry.core.envelope import parse_message
         raw = (f"From: clerk@uscourts.gov\r\nTo: f@x.com\r\nSubject: s\r\n"
                f"Message-ID: <{msgid}>\r\n\r\nbody").encode()
         mid = self.store.ingest(parse_message(raw, source="t", fetched_at="now"),
@@ -148,37 +148,37 @@ class TestFactsFromTheRecord(unittest.TestCase):
         return mid
 
     def test_an_empty_record_satisfies_nothing(self):
-        from docketry.workflow import facts_from_store
+        from docketry.tools.workflow import facts_from_store
         facts = facts_from_store(self.store, "826CV01234")
         self.assertEqual((facts.documents, facts.notices, facts.fields),
                          (set(), set(), set()))
 
     def test_notices_on_this_case_become_facts(self):
-        from docketry.workflow import facts_from_store
+        from docketry.tools.workflow import facts_from_store
         self._notice("a@x", "8:26-cv-01234", "service_notice")
         self._notice("b@x", "8:26-cv-01234", "hearing_notice")
         facts = facts_from_store(self.store, "826CV01234")
         self.assertEqual(facts.notices, {"service_notice", "hearing_notice"})
 
     def test_another_case_does_not_leak_in(self):
-        from docketry.workflow import facts_from_store
+        from docketry.tools.workflow import facts_from_store
         self._notice("c@x", "9:26-cv-99999")
         self.assertEqual(facts_from_store(self.store, "826CV01234").notices, set())
 
     def test_case_numbers_match_across_formatting(self):
-        from docketry.workflow import facts_from_store
+        from docketry.tools.workflow import facts_from_store
         self._notice("d@x", "8:26-cv-01234")
         self.assertTrue(facts_from_store(self.store, "826CV01234").notices)
 
     def test_opening_a_matter_fills_the_case_number_field(self):
-        from docketry.workflow import facts_from_store
+        from docketry.tools.workflow import facts_from_store
         self.store.open_matter("826CV01234", stage="intake")
         self.assertIn("case_number", facts_from_store(self.store, "826CV01234").fields)
 
 
 class TestMatterRecord(unittest.TestCase):
     def setUp(self):
-        from docketry.store import Store
+        from docketry.core.store import Store
         self.store = Store(tempfile.mkdtemp())
         self.mid = self.store.open_matter("826CV01234", stage="intake")
 

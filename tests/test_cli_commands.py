@@ -11,8 +11,8 @@ import unittest
 from pathlib import Path
 
 from docketry.cli import main
-from docketry.envelope import parse_message
-from docketry.store import Store
+from docketry.core.envelope import parse_message
+from docketry.core.store import Store
 
 EXAMPLES = Path("examples")
 

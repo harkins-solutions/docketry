@@ -1,6 +1,6 @@
 import unittest
 
-from docketry.manifest import ManifestError, build_pipeline, DEFAULT_MANIFEST
+from docketry.core.manifest import ManifestError, build_pipeline, DEFAULT_MANIFEST
 import tomllib
 
 
@@ -8,7 +8,16 @@ class TestManifest(unittest.TestCase):
     def test_default_manifest_loads(self):
         p = build_pipeline(tomllib.loads(DEFAULT_MANIFEST))
         self.assertEqual(p.stages, ["ingest", "review"])
-        self.assertEqual(len(p.bindings), 2)
+        self.assertEqual([b.gate.id for b in p.bindings],
+                         ["notice-parser", "attachment-policy",
+                          "provenance-stamp"])
+
+    def test_the_starter_manifest_offers_the_wall_without_inventing_terms(self):
+        # A name-screen with no terms would refuse to load, so the starter
+        # ships it commented — but it ships it, rather than leaving the one
+        # gate a firm would actually want out of the file entirely.
+        self.assertIn('# id = "name-screen"', DEFAULT_MANIFEST)
+        self.assertIn("ethical wall", DEFAULT_MANIFEST)
 
     def test_unknown_gate_refused(self):
         with self.assertRaises(ManifestError):

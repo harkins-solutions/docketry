@@ -18,12 +18,12 @@ import unittest
 from email.message import EmailMessage
 from pathlib import Path
 
-from docketry import store as st
-from docketry.classify import classify
-from docketry.envelope import parse_message
-from docketry.manifest import load_manifest
-from docketry.pipeline import GateRefusal, Runner
-from docketry.store import Store
+from docketry.core import store as st
+from docketry.tools.classify import classify
+from docketry.core.envelope import parse_message
+from docketry.core.manifest import load_manifest
+from docketry.core.pipeline import GateRefusal, Runner
+from docketry.core.store import Store
 
 MANIFEST = Path("examples/guardrails-litigation-team.toml")
 

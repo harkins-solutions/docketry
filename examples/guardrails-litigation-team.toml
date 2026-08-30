@@ -1,9 +1,32 @@
-# Litigation team: paralegals clear routine holds, classification proposals
-# flow to the queue, provenance always recorded.
+# Litigation team: the wall and the court notices first, because those are the
+# two that cost something when they go wrong. Paralegals clear routine holds,
+# classification proposals flow to the queue, provenance always recorded.
 
 [pipeline]
 stages = ["ingest", "review"]
 
+# The ethical wall. A message naming a screened party stops — and only a
+# recorded release by an attorney moves it. Replace these with your own; the
+# terms never leave this file.
+[[gate]]
+id = "name-screen"
+binds_to = ["ingest"]
+on_fail = "block"
+authority = "attorney"
+
+[gate.options]
+terms = ["Walled Party LLC", "Confidential Matter Name"]
+note = "ethical wall"
+
+# A court notice this cannot read is reviewed, never dropped: a misread
+# hearing date is a malpractice claim, an unread one is a phone call.
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+# Everything below is pipeline hygiene.
 [[gate]]
 id = "sender-scope"
 binds_to = ["ingest"]
@@ -21,12 +44,6 @@ authority = "paralegal"
 
 [gate.options]
 max_size_mb = 50
-
-[[gate]]
-id = "notice-parser"
-binds_to = ["ingest"]
-on_fail = "bounce"
-authority = "paralegal"
 
 [[gate]]
 id = "doc-classifier"

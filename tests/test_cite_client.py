@@ -7,8 +7,8 @@ except ImportError:
     HAVE_HTTPX = False
 
 if HAVE_HTTPX:
-    from docketry.cite import CiteError
-    from docketry.cite_client import CourtListenerClient
+    from docketry.tools.cite import CiteError
+    from docketry.tools.cite_client import CourtListenerClient
 
     def client_with(handler):
         c = CourtListenerClient(token="tkn")

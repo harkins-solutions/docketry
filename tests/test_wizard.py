@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.config import load_home
-from docketry.manifest import load_manifest
-from docketry.roles import load_roles
+from docketry.core.config import load_home
+from docketry.core.manifest import load_manifest
+from docketry.core.roles import load_roles
 from docketry.wizard import (
     Answers,
     Asker,

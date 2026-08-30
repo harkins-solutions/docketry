@@ -6,10 +6,10 @@ model tiers are somebody else's optional add-on, never a default.
 """
 from __future__ import annotations
 
-from ..classify import classify
-from ..envelope import Envelope
-from ..pipeline import Finding, SEVERITY_INFO
-from . import register
+from .classify import classify
+from ..core.envelope import Envelope
+from ..core.pipeline import Finding, SEVERITY_INFO
+from ..core.gates import register
 
 
 @register

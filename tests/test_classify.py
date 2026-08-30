@@ -1,9 +1,9 @@
 import tempfile
 import unittest
 
-from docketry.classify import classify
-from docketry.envelope import Attachment, Envelope
-from docketry.store import Store
+from docketry.tools.classify import classify
+from docketry.core.envelope import Attachment, Envelope
+from docketry.core.store import Store
 
 
 class TestClassify(unittest.TestCase):
@@ -83,7 +83,7 @@ class TestStagedApply(unittest.TestCase):
 
 class TestGate(unittest.TestCase):
     def test_gate_proposes_only(self):
-        from docketry.gates.classifier import DocClassifier
+        from docketry.tools.gates_classifier import DocClassifier
         findings = DocClassifier().check(env_with_attachment("Subpoena Duces Tecum.pdf"), {})
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].severity, "info")

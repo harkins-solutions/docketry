@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.envelope import parse_message
-from docketry.report import build, domain_of, percentile
-from docketry.store import Store
+from docketry.core.envelope import parse_message
+from docketry.tools.report import build, domain_of, percentile
+from docketry.core.store import Store
 
 
 def _msg(msgid, frm, subject="s"):
@@ -79,7 +79,7 @@ class TestReport(unittest.TestCase):
         self.assertEqual(build(self.store, days=30).documents_not_held, 1)
 
     def test_a_gate_that_never_fired_is_named(self):
-        from docketry.manifest import build_pipeline
+        from docketry.core.manifest import build_pipeline
         pipeline = build_pipeline({"pipeline": {"stages": ["ingest"]},
                                    "gate": [{"id": "provenance-stamp",
                                              "binds_to": ["ingest"]}]})
@@ -198,7 +198,7 @@ class TestOneWaySourcesAreCountedApart(unittest.TestCase):
 
 class TestCorrespondenceByWhoTheyAre(unittest.TestCase):
     def setUp(self):
-        from docketry.contacts import load_contacts
+        from docketry.tools.contacts import load_contacts
         self.store = Store(tempfile.mkdtemp())
         p = Path(tempfile.mkdtemp()) / "c.toml"
         p.write_text('[[contact]]\nemail="@theirfirm.com"\n'

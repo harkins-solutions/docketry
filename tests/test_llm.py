@@ -7,7 +7,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
-from docketry.llm import (
+from docketry.tools.llm import (
     LLMConfig,
     LLMError,
     RemoteEndpointRefused,
@@ -110,7 +110,7 @@ class TestProposeAgainstALocalServer(unittest.TestCase):
 
     def test_probe_does_not_inherit_a_long_generation_timeout(self):
         # doctor is what you run when things are broken; it must not hang.
-        import docketry.llm as llm
+        import docketry.tools.llm as llm
         seen = {}
         real = llm.propose
 
@@ -145,7 +145,7 @@ class TestWhereThePacketsActuallyGo(unittest.TestCase):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
                      ("8.8.8.8", 0))]
 
-        with mock.patch("docketry.llm.socket.getaddrinfo", public):
+        with mock.patch("docketry.tools.llm.socket.getaddrinfo", public):
             with self.assertRaises(RemoteEndpointRefused):
                 resolve("http://models.local:11434")
             with self.assertRaises(RemoteEndpointRefused):
@@ -161,14 +161,14 @@ class TestWhereThePacketsActuallyGo(unittest.TestCase):
             port = srv.server_port
             loopback = [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
                          ("127.0.0.1", port))]
-            with mock.patch("docketry.llm.socket.getaddrinfo",
+            with mock.patch("docketry.tools.llm.socket.getaddrinfo",
                             lambda *a, **kw: loopback):
                 ep = vet(f"http://model.invalid:{port}")
                 self.assertEqual(ep.ip, "127.0.0.1")
             # Resolution is no longer patched; a second lookup would fail.
             with self.assertRaises(socket.gaierror):
                 socket.getaddrinfo("model.invalid", port)
-            with mock.patch("docketry.llm.vet", return_value=ep):
+            with mock.patch("docketry.tools.llm.vet", return_value=ep):
                 p = propose(LLMConfig(base_url=ep.url, model="m"), "classify")
             self.assertTrue(p.text.startswith("ready:"))
         finally:
@@ -219,19 +219,21 @@ class TestNoModelInsideAGate(unittest.TestCase):
     """
 
     def test_gates_do_not_import_the_llm(self):
-        offenders = []
-        for f in sorted((PKG / "gates").glob("*.py")):
-            if "llm" in f.read_text():
-                offenders.append(f.name)
+        # Both places a gate can live: the port's own, and the tool-backed
+        # ones that register themselves.
+        gate_files = sorted((PKG / "core" / "gates").glob("*.py")) + \
+            sorted((PKG / "tools").glob("gates_*.py"))
+        self.assertTrue(gate_files, "no gate files found — did the tree move?")
+        offenders = [f.name for f in gate_files if "llm" in f.read_text()]
         self.assertEqual(offenders, [],
                          "a gate must not consult a model: gates decide, models propose")
 
     def test_the_pipeline_runner_does_not_import_the_llm(self):
-        self.assertNotIn("llm", (PKG / "pipeline.py").read_text())
+        self.assertNotIn("llm", (PKG / "core" / "pipeline.py").read_text())
 
     def test_redaction_does_not_consult_a_model(self):
         # What gets redacted is never a model's call.
-        self.assertNotIn("llm", (PKG / "redact.py").read_text())
+        self.assertNotIn("llm", (PKG / "tools" / "redact.py").read_text())
 
 
 class TestReasoningModels(unittest.TestCase):

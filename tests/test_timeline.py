@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.envelope import parse_message
-from docketry.store import Store
-from docketry.timeline import (
+from docketry.core.envelope import parse_message
+from docketry.core.store import Store
+from docketry.tools.timeline import (
     CORRESPONDENCE,
     ATTACHED,
     CORRESPONDENCE,
@@ -143,7 +143,7 @@ class TestExport(unittest.TestCase):
 
     def test_xlsx_has_real_dates_filters_and_the_disclaimer(self):
         from openpyxl import load_workbook
-        from docketry.export import to_xlsx
+        from docketry.tools.export import to_xlsx
         out = to_xlsx(self.tl, self.tmp / "t.xlsx")
         wb = load_workbook(out)
         ws = wb["Timeline"]
@@ -158,7 +158,7 @@ class TestExport(unittest.TestCase):
 
     def test_docx_is_a_real_table_not_drawn_text(self):
         import docx
-        from docketry.export import to_docx
+        from docketry.tools.export import to_docx
         out = to_docx(self.tl, self.tmp / "t.docx")
         d = docx.Document(str(out))
         self.assertEqual(len(d.tables), 1)
@@ -170,7 +170,7 @@ class TestExport(unittest.TestCase):
     def test_gaps_reach_both_exports(self):
         from openpyxl import load_workbook
         import docx
-        from docketry.export import to_docx, to_xlsx
+        from docketry.tools.export import to_docx, to_xlsx
         self.tl.gaps = [{"class": "proven", "detail": "document 47 missing"}]
         wb = load_workbook(to_xlsx(self.tl, self.tmp / "g.xlsx"))
         about = "\n".join(str(c.value) for c in wb["About this file"]["A"])
@@ -181,7 +181,7 @@ class TestExport(unittest.TestCase):
 
 class TestReconcile(unittest.TestCase):
     def setUp(self):
-        from docketry.timeline import Entry, Timeline
+        from docketry.tools.timeline import Entry, Timeline
         self.tl = Timeline(case_number="8:26-cv-1")
         self.tl.entries = [
             Entry(when="2026-03-04T09:00:00", layer=RECORD, kind="service",
@@ -193,25 +193,25 @@ class TestReconcile(unittest.TestCase):
         ]
 
     def test_csv_and_text_dockets_both_parse(self):
-        from docketry.reconcile import parse_docket
+        from docketry.tools.reconcile import parse_docket
         csv_rows = parse_docket("Doc,Date,Description\n1,03/04/2026,Complaint\n")
         txt_rows = parse_docket("  1  03/04/2026  Complaint\n  12 03/19/2026 Motion\n")
         self.assertEqual(csv_rows[0].doc_number, 1)
         self.assertEqual(len(txt_rows), 2)
 
     def test_unreadable_lines_are_skipped_not_guessed(self):
-        from docketry.reconcile import parse_docket
+        from docketry.tools.reconcile import parse_docket
         self.assertEqual(parse_docket("this is prose, not a docket"), [])
 
     def test_document_numbers_match_exactly(self):
-        from docketry.reconcile import DocketLine, reconcile
+        from docketry.tools.reconcile import DocketLine, reconcile
         rec = reconcile(self.tl, [DocketLine(1, "03/04/2026", "Complaint"),
                                   DocketLine(12, "03/19/2026", "Mot. to Dismiss")])
         self.assertEqual(len(rec.matched), 2)
         self.assertTrue(rec.clean)
 
     def test_a_docket_entry_we_never_received_is_reported(self):
-        from docketry.reconcile import DocketLine, reconcile
+        from docketry.tools.reconcile import DocketLine, reconcile
         rec = reconcile(self.tl, [DocketLine(1, "03/04/2026", "Complaint"),
                                   DocketLine(12, "03/19/2026", "MTD"),
                                   DocketLine(13, "03/20/2026", "Notice of Appearance")])
@@ -220,20 +220,20 @@ class TestReconcile(unittest.TestCase):
         self.assertFalse(rec.clean)
 
     def test_something_we_hold_that_is_not_on_the_docket_is_reported(self):
-        from docketry.reconcile import DocketLine, reconcile
+        from docketry.tools.reconcile import DocketLine, reconcile
         rec = reconcile(self.tl, [DocketLine(1, "03/04/2026", "Complaint")])
         self.assertEqual([e.doc_number for e in rec.only_here], [12])
 
     def test_correspondence_is_not_counted_as_a_discrepancy(self):
-        from docketry.reconcile import DocketLine, reconcile
+        from docketry.tools.reconcile import DocketLine, reconcile
         rec = reconcile(self.tl, [DocketLine(1, "03/04/2026", "Complaint"),
                                   DocketLine(12, "03/19/2026", "MTD")])
         # The email was never going to be on a docket.
         self.assertEqual(rec.only_here, [])
 
     def test_fuzzy_matches_are_staged_never_merged(self):
-        from docketry.timeline import Entry, Timeline
-        from docketry.reconcile import DocketLine, reconcile
+        from docketry.tools.timeline import Entry, Timeline
+        from docketry.tools.reconcile import DocketLine, reconcile
         tl = Timeline(case_number="26-CA-9")
         tl.entries = [Entry(when="2026-05-01T09:00:00", layer=RECORD,
                             kind="service", title="Notice of Hearing on Motion")]
@@ -245,7 +245,7 @@ class TestReconcile(unittest.TestCase):
 
 class TestFindingsAndHelpers(unittest.TestCase):
     def test_a_rejected_filing_with_no_refile_is_surfaced(self):
-        from docketry.timeline import Entry, Timeline, cross_layer_findings
+        from docketry.tools.timeline import Entry, Timeline, cross_layer_findings
         tl = Timeline(case_number="26-CA-7")
         tl.entries = [Entry(when="2026-05-01T09:00:00", layer=RECORD,
                             kind="filing", title="Filing Rejected — Envelope 9912")]
@@ -254,7 +254,7 @@ class TestFindingsAndHelpers(unittest.TestCase):
         self.assertIn("REJECTED", findings[0])
 
     def test_a_rejected_filing_followed_by_a_refile_is_not_flagged(self):
-        from docketry.timeline import Entry, Timeline, cross_layer_findings
+        from docketry.tools.timeline import Entry, Timeline, cross_layer_findings
         tl = Timeline(case_number="26-CA-8")
         tl.entries = [
             Entry(when="2026-05-01T09:00:00", layer=RECORD, kind="filing",
@@ -265,7 +265,7 @@ class TestFindingsAndHelpers(unittest.TestCase):
         self.assertEqual(cross_layer_findings(tl), [])
 
     def test_threads_are_counted(self):
-        from docketry.timeline import Entry, Timeline
+        from docketry.tools.timeline import Entry, Timeline
         tl = Timeline(case_number="26-CA-10")
         tl.entries = [
             Entry(when="", layer=CORRESPONDENCE, kind="email", title="a",
@@ -280,15 +280,15 @@ class TestFindingsAndHelpers(unittest.TestCase):
     def test_an_unparseable_date_survives_as_text_not_a_blank(self):
         # A date we cannot parse must still reach the reader. Blanking it
         # would silently move an entry out of the chronology.
-        from docketry.export import _as_date
+        from docketry.tools.export import _as_date
         self.assertEqual(_as_date("filed sometime in March"),
                          "filed sometime in March")
         self.assertEqual(_as_date(""), "")
 
     def test_findings_reach_the_spreadsheet(self):
         from openpyxl import load_workbook
-        from docketry.export import to_xlsx
-        from docketry.timeline import Entry, Timeline
+        from docketry.tools.export import to_xlsx
+        from docketry.tools.timeline import Entry, Timeline
         tmp = Path(tempfile.mkdtemp())
         tl = Timeline(case_number="26-CA-11")
         tl.entries = [Entry(when="2026-05-01T09:00:00", layer=RECORD,
@@ -319,7 +319,7 @@ class TestClientMailReachesItsOwnLayer(unittest.TestCase):
                 first_stage="ingest")
 
     def _directory(self):
-        from docketry.contacts import load_contacts
+        from docketry.tools.contacts import load_contacts
         p = Path(tempfile.mkdtemp()) / "c.toml"
         p.write_text('[[contact]]\nemail="mr.doe@client.com"\nkind="client"\n'
                      '[[contact]]\nemail="@theirfirm.com"\n'
@@ -332,7 +332,7 @@ class TestClientMailReachesItsOwnLayer(unittest.TestCase):
         self.assertEqual(layers, {CORRESPONDENCE})
 
     def test_with_a_directory_client_mail_is_separated(self):
-        from docketry.timeline import CLIENT
+        from docketry.tools.timeline import CLIENT
         tl = build(self.store, "26-CA-1", threads=["root@x"],
                    directory=self._directory())
         by_layer = {e.layer for e in tl.entries}
@@ -349,7 +349,7 @@ class TestClientMailReachesItsOwnLayer(unittest.TestCase):
         self.assertEqual(oc[0].kind, "opposing_counsel")
 
     def test_filtering_to_the_client_layer_returns_only_client_mail(self):
-        from docketry.timeline import CLIENT
+        from docketry.tools.timeline import CLIENT
         tl = build(self.store, "26-CA-1", threads=["root@x"],
                    directory=self._directory())
         rows = tl.sorted_entries((CLIENT,))

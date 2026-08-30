@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.adapter_builder import (
+from docketry.tools.adapter_builder import (
     suggest_type,
     Candidate,
     build,
@@ -12,7 +12,7 @@ from docketry.adapter_builder import (
     suggest_match,
     to_toml,
 )
-from docketry.notices import AdapterError, load_adapters_file, parse
+from docketry.tools.notices import AdapterError, load_adapters_file, parse
 
 SAMPLE = b"""From: noreply@stlucieclerk.com\r
 To: firm@example.com\r
@@ -138,7 +138,7 @@ class TestSuggestType(unittest.TestCase):
     def _env(self, subject, body):
         raw = (f"From: a@b.gov\r\nTo: c@d.com\r\nSubject: {subject}\r\n"
                f"Message-ID: <x@b.gov>\r\n\r\n{body}").encode()
-        from docketry.envelope import parse_message
+        from docketry.core.envelope import parse_message
         return parse_message(raw, source="t", fetched_at="")
 
     def test_a_hearing_notice_is_not_filed_as_service(self):

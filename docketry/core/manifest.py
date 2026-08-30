@@ -17,9 +17,31 @@ DEFAULT_MANIFEST = """\
 # Docketry guardrail manifest.
 # Stages run left to right; each [[gate]] declares where it binds, what
 # happens on failure (block | bounce | warn), and which role can approve.
+#
+# `docketry init` without --host/--user asks questions and writes this file
+# from the answers, including an ethical wall. This is the starter version.
 
 [pipeline]
 stages = ["ingest", "review"]
+
+# A court notice this cannot read is held rather than guessed at.
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
+
+# Uncomment and list your own screened parties to turn on the ethical wall.
+#
+# [[gate]]
+# id = "name-screen"
+# binds_to = ["ingest"]
+# on_fail = "block"
+# authority = "attorney"
+#
+# [gate.options]
+# terms = ["Walled Party LLC"]
+# note = "ethical wall"
 
 [[gate]]
 id = "attachment-policy"

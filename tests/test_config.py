@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from docketry.config import load_home, write_config
+from docketry.core.config import load_home, write_config
 
 POSIX = os.name != "nt"
 
@@ -47,7 +47,7 @@ class TestConfig(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp) / "home"
-            with mock.patch("docketry.config.os.open", spy):
+            with mock.patch("docketry.core.config.os.open", spy):
                 cfg = write_config(home, host="h", user="u", password="hunter2")
             flags, mode = seen[str(cfg)]
             self.assertEqual(mode, 0o600, "created at the wrong mode")

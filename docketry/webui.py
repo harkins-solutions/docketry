@@ -16,10 +16,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from . import store as st
-from .pipeline import Runner
-from .roles import refuse_approval
-from .store import Store
+from .core import store as st
+from .core.pipeline import Runner
+from .core.roles import refuse_approval
+from .core.store import Store
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60">
@@ -174,7 +174,7 @@ def _adapters_path(home: Path) -> Path:
 
 
 def _existing_adapters(home: Path) -> str:
-    from .notices import AdapterError, load_adapters_file
+    from .tools.notices import AdapterError, load_adapters_file
     path = _adapters_path(home)
     if not path.exists():
         return ('<p class="hint">None yet — only the built-in adapters are'
@@ -206,7 +206,7 @@ def _paste_form(token: str, sample: str = "") -> str:
 
 
 def _candidate_form(token: str, sample: str, env, cands, suggested: dict) -> str:
-    from .notices import NOTICE_TYPES
+    from .tools.notices import NOTICE_TYPES
     if not cands:
         return ('<p class="f">No labelled fields found in that message.</p>'
                 '<p class="hint">Docketry looks for lines like'
@@ -394,7 +394,7 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                 self._adapters_page()
                 return
             if self.path in ("/report", "/report/"):
-                from .report import build
+                from .tools.report import build
                 store = self._store()
                 try:
                     rep = build(store, pipeline, days=30,
@@ -417,8 +417,8 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
 
         def _save_adapter(self, form):
             """Build it, run it against the pasted email, save only if it works."""
-            from .adapter_builder import build, scan, scan_email, to_toml
-            from .notices import AdapterError, load_adapters_file
+            from .tools.adapter_builder import build, scan, scan_email, to_toml
+            from .tools.notices import AdapterError, load_adapters_file
 
             sample = form.get("sample", "")
             try:
@@ -531,7 +531,7 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                                                role=form["role"].strip())
                     self._redirect()
                 elif self.path == "/adapters/scan":
-                    from .adapter_builder import (
+                    from .tools.adapter_builder import (
                         scan, scan_email, suggest_match, suggest_type)
                     sample = form.get("sample", "")
                     if not sample.strip():

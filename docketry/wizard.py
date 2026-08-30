@@ -318,8 +318,8 @@ def validate(a: Answers) -> None:
     """
     import tomllib
 
-    from .manifest import build_pipeline
-    from .roles import parse_roles
+    from .core.manifest import build_pipeline
+    from .core.roles import parse_roles
 
     registry = parse_roles(tomllib.loads(roles_toml(a)))
     build_pipeline(tomllib.loads(guardrails_toml(a)), registry)
@@ -327,7 +327,7 @@ def validate(a: Answers) -> None:
 
 def write(home: Path, a: Answers) -> list[Path]:
     """Write config.toml, roles.toml and guardrails.toml. Validated first."""
-    from .config import CONFIG_NAME, MANIFEST_NAME, write_config
+    from .core.config import CONFIG_NAME, MANIFEST_NAME, write_config
 
     validate(a)
     home.mkdir(parents=True, exist_ok=True)
