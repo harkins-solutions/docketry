@@ -1,25 +1,19 @@
-"""Bring your own model — and it has to be one running on your own network.
+"""Optional local model client. Off unless [llm] is configured.
 
-Docketry's promise is that nothing is copied off the machine. A model changes
-that the moment it is reachable over the public internet, so this module does
-not take the firm's word for it: `resolve()` refuses any endpoint that is not
-loopback or private-range, and refuses it before a single byte of a document
-is assembled into a request. Local-only is a check, not a paragraph in the
-README.
+The endpoint is resolved and every address it returns is checked before a
+request is built: unless all of them are loopback, private-range or
+link-local, the request is refused. The address that was checked is the one
+dialled, and a 3xx response is refused rather than followed, so a private
+endpoint cannot redirect a document off the network.
 
-"Local" means the firm's own network, not strictly the same box: a practice
-running a model on a server in the next room is still a practice that has not
-sent a client file to a vendor. A public address is refused whatever the
-scheme, and no credential is ever read from the manifest.
+Speaks the OpenAI-compatible chat API, so one code path covers Ollama,
+llama.cpp, vLLM and LM Studio. Reasoning models' <think> blocks and
+reasoning_content are separated from the answer; a response containing only
+reasoning is an error rather than an empty answer.
 
-What a model is allowed to do here is equally narrow. It PROPOSES. It never
-decides. Nothing in this module releases a hold, approves anything, applies a
-classification, chooses what to redact, or advances a stage — those are the
-enforcement points, and they stay deterministic and human-gated. A proposal
-carries the endpoint, the model name and a hash of the prompt that produced
-it, so any output can be traced back to what generated it.
-
-Off unless configured. Nothing calls it by default.
+A model proposes. Nothing here releases a hold, approves anything, applies a
+classification, chooses what to redact, or advances a stage. Each Proposal
+carries the endpoint, model name and a hash of the prompt.
 """
 from __future__ import annotations
 

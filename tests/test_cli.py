@@ -356,11 +356,11 @@ class TestAnchor(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("docketry-anchor", out)
         self.assertIn("approvals=1", out)
-        self.assertIn("cannot edit", out)
-        # Written to the home too, and honest about what that copy is worth.
+        self.assertIn("outside this machine", out)
+        # Written to the home too, and states what that copy is worth.
         log = Path(self.home, "anchors.log").read_text()
         self.assertIn("head=", log)
-        self.assertIn("proves nothing", out)
+        self.assertIn("same disk", out)
 
     def test_anchor_refuses_a_log_that_no_longer_verifies(self):
         self._approve()

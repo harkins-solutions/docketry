@@ -1,56 +1,50 @@
-# My First Docketry Gate
+# Writing a gate
 
-A gate is one class with one method. It gets a message and answers one
-question about it: does this stop, or does it keep going?
+A gate is a Python class with an `id` and a `check()` method. Docketry runs it
+against every message entering a stage the manifest binds it to, and holds the
+message if it returns a finding with severity `fail`.
 
-Everything Docketry enforces is a gate. The ethical wall is a gate. The
-e-service notice parser is a gate. Nothing shipped here has a privilege your
-gate does not have, and this page ends with you having written one.
+Everything Docketry enforces is a gate, including the shipped ones. There is no
+private interface.
 
-Five minutes. You need Python 3.11+ and a Docketry home.
-
-```console
-$ pip install docketry
-$ docketry init          # asks nine questions, writes the home
-```
+Requires Python 3.11+, `pip install docketry`, and a home directory
+(`docketry init`).
 
 ---
 
-## 1. Write it (10 seconds)
+## Walkthrough
+
+### 1. Write it
 
 ```console
 $ docketry new-gate long-subject
 wrote docketry-home/gates/long_subject.py
 ```
 
-That file is a gate that already works, with every part of itself explained
-in comments. You are going to change a working thing, not assemble one.
+The file is a complete gate: it holds any message whose subject runs over five
+words. Every part of it is commented.
 
-## 2. Run it (10 seconds)
+### 2. Run it
 
 ```console
 $ docketry try-gate long-subject --subject "this subject is quite a lot longer than five words"
 gate:    long-subject (file:gates/long_subject.py)
 message: 'this subject is quite a lot longer than five words' from someone@example.com, 0 attachment(s)
-result:  [fail] subject is 10 words, over the 5 this pipeline accepts: '...'
-```
+result:  [fail] subject is 10 words, over the 5 this pipeline accepts
 
-No mailbox, no pipeline, no store, nothing to clean up. `try-gate` builds one
-message and hands it to your gate. This is the loop: change the file, run this,
-read the finding.
-
-A short subject passes:
-
-```console
 $ docketry try-gate long-subject --subject "short one"
 result:  no findings — this message passes
 ```
 
-## 3. Change it (3 minutes)
+`try-gate` builds one message and calls your `check()`. No mailbox, no
+pipeline, no database. Use `--attach NAME` to add an attachment, `--from` and
+`--body` to set the sender and body, or `--eml FILE` to run against a saved
+message.
+
+### 3. Change it
 
 Open `docketry-home/gates/long_subject.py` and replace the body of `check()`.
-Say you want to hold anything arriving as a `.zip`, because your firm's rule
-is that court documents do not come zipped:
+To hold zip archives instead:
 
 ```python
     def check(self, envelope, options: dict) -> list[Finding]:
@@ -60,26 +54,24 @@ is that court documents do not come zipped:
                 held.append(Finding(
                     self.id,
                     SEVERITY_FAIL,
-                    f"{attachment.filename} is a zip archive — this pipeline"
-                    " takes documents, not archives",
+                    f"{attachment.filename} is a zip archive; this pipeline"
+                    " accepts documents",
                 ))
         return held
 ```
 
-Run it against a message that has one:
-
 ```console
 $ docketry try-gate long-subject --attach "discovery.zip"
-result:  [fail] discovery.zip is a zip archive — this pipeline takes documents, not archives
+result:  [fail] discovery.zip is a zip archive; this pipeline accepts documents
 ```
 
-Write the summary for whoever reads the queue at five o'clock. It is the whole
-explanation they get for why their message is sitting there.
+The summary string is what appears in `docketry queue` and in the review UI
+next to the held message. Write it for whoever has to act on it.
 
-## 4. Bind it (1 minute)
+### 4. Bind it
 
-A gate that exists is not a gate that runs. Add this to `guardrails.toml` in
-your home — `new-gate` printed it for you:
+A gate that exists does not run until a manifest binds it. Add to
+`guardrails.toml` — `new-gate` prints this block for you:
 
 ```toml
 [[gate]]
@@ -87,143 +79,181 @@ id = "long-subject"
 binds_to = ["ingest"]
 on_fail = "bounce"
 authority = "paralegal"
+
+[gate.options]
+max_words = 5
 ```
 
-Confirm Docketry sees it:
+Confirm it is loaded:
 
 ```console
 $ docketry gates
+attachment-policy  built-in  [ingest only]
+                   What file types and sizes this pipeline accepts. Hygiene, not AV.
+doc-classifier     built-in (tools)
 long-subject       file:gates/long_subject.py
                    Long subject.
 name-screen        built-in
-...
+                   Hold any message whose content mentions a screened name.
+notice-parser      built-in (tools)  [ingest only]
+provenance-stamp   built-in
+sender-scope       built-in  [ingest only]
 ```
 
-It now runs on every message that enters the `ingest` stage, and anything it
-fails parks in the review queue until a paralegal releases it on the record.
-That is the same treatment the shipped gates get. There is no other path.
-
----
-
-## What you just plugged into
-
-```mermaid
-flowchart LR
-  MSG["message enters<br/>a stage"] --> RUN{"run every gate<br/>bound here"}
-  RUN --> YOURS["your gate<br/>check"]
-  RUN --> OTHER["the other gates<br/>bound to this stage"]
-  YOURS --> F["findings"]
-  OTHER --> F
-  F --> SEV{"any finding<br/>with severity fail?"}
-  SEV -- "no" --> GO["message continues"]
-  SEV -- "yes" --> ONFAIL{"the manifest's<br/>on_fail"}
-  ONFAIL -- "warn" --> GO
-  ONFAIL -- "bounce" --> QUEUE["review queue"]
-  ONFAIL -- "block" --> STOP["blocked"]
-  QUEUE --> APP["recorded approval<br/>by the named role"]
-  STOP --> APP
-  APP --> GO
-```
-
-Note where your gate is not. It reports; it does not decide what happens next.
-Whether a failed check means "warn and continue", "park in the queue" or "stop
-dead" is the firm's manifest, and releasing a hold is a human approval recorded
-in an audit log. A gate that could release its own hold would not be a
-guardrail.
+It now runs on every message entering `ingest`. A `fail` sends the message to
+`docketry queue` with status `pending_review`, and it stays there until a
+paralegal approves it.
 
 ---
 
 ## Reference
 
-### The protocol
+### The class
 
 ```python
-class MyGate:
-    id: str                          # "my-gate" — lowercase, hyphenated
-    allowed_stages: set[str] | None   # where it may be bound; None = anywhere
+from docketry.core.gates import register
+from docketry.core.pipeline import Finding, SEVERITY_FAIL, SEVERITY_WARN, SEVERITY_INFO
 
-    def check(self, envelope, options: dict) -> list[Finding]: ...
-    def validate_options(self, options: dict) -> list[str]: ...   # optional
+
+@register
+class MyGate:
+    id = "my-gate"                      # str, required; lowercase-hyphenated
+    allowed_stages = None               # set[str] | None; None means any stage
+
+    def check(self, envelope, options: dict) -> list[Finding]:
+        ...                             # required
+
+    def validate_options(self, options: dict) -> list[str]:
+        ...                             # optional; returns problems, empty = ok
 ```
 
-`register(MyGate)` — or `@register` above the class — puts it in the registry
-that manifests bind by id. Registering a duplicate id is refused: two gates
-with one name means a manifest cannot say which it means, and quietly
-replacing a shipped gate is how a guardrail stops guarding.
+`register` takes the class, as a decorator or a call. `Finding` is a dataclass
+of `(gate_id: str, severity: str, summary: str)`.
 
-### What the envelope carries
+Gates are instantiated with no arguments, once per run. Do not keep state
+between messages on the instance.
 
-`message_id`, `from_addr`, `to`, `cc`, `subject`, `body_text`, `date`,
-`source`, `fetched_at`, `raw_sha256`, and `attachments` — each with
-`filename`, `content_type`, `size`, `sha256`, and `content`, the real bytes,
-on every run including re-runs after an approval.
+### Envelope fields
 
-The envelope is normalized before any gate sees it. Whatever the sending
-system did with encodings, HTML bodies or filename escaping is already dealt
-with, so your gate reads text and bytes rather than MIME.
+`check()` receives the parsed message. Encodings, HTML bodies and filename
+escaping are already resolved.
+
+| Field | Type | Notes |
+|---|---|---|
+| `message_id` | `str` | from the `Message-ID` header |
+| `from_addr` | `str` | bare address, no display name |
+| `to`, `cc` | `list[str]` | bare addresses |
+| `subject` | `str` | decoded |
+| `body_text` | `str` | text part, or HTML converted to text |
+| `date` | `str` | as sent |
+| `attachments` | `list[Attachment]` | see below |
+| `raw_sha256` | `str` | digest of the raw message; the dedup key |
+| `source` | `str` | which mailbox or command ingested it |
+| `fetched_at` | `str` | ISO 8601 UTC |
+| `in_reply_to` | `str` | threading |
+| `references` | `list[str]` | threading |
+| `auto_submitted`, `precedence`, `list_id` | `str` | bulk/auto-reply headers |
+
+`Attachment`: `filename` (sanitized to a basename), `content_type`, `size`
+(bytes), `sha256`, and `content` (`bytes` — the real bytes, on every run
+including re-runs after an approval).
 
 ### Severity and on_fail
 
-`SEVERITY_FAIL` is the only severity that can hold a message. `SEVERITY_WARN`
-and `SEVERITY_INFO` are recorded against the message and it keeps moving —
-useful for a gate that annotates rather than stops.
+| Severity | Constant | Effect |
+|---|---|---|
+| `fail` | `SEVERITY_FAIL` | can hold the message, per `on_fail` |
+| `warn` | `SEVERITY_WARN` | recorded; message continues |
+| `info` | `SEVERITY_INFO` | recorded; message continues |
 
-What a `fail` *does* is the manifest's `on_fail`: `warn`, `bounce` (park in
-the review queue) or `block` (stop). The same gate can be advisory in one
-firm's pipeline and blocking in another's without changing a line of its code.
+What a `fail` does is the binding's business, not the gate's:
+
+| `on_fail` | Result |
+|---|---|
+| `warn` | recorded, message continues |
+| `bounce` | status `pending_review`; shows in `docketry queue` |
+| `block` | status `blocked` |
+
+The same gate is advisory in one firm's manifest and blocking in another's with
+no code change. A gate cannot release its own hold; that requires
+`docketry approve` with a name and a role, which writes an audit row.
 
 ### allowed_stages
 
-Set it to the stages your gate is meant for and binding it elsewhere refuses
-when the manifest loads — at install time, in front of whoever is configuring
-it, rather than at five o'clock in front of someone who cannot fix it. `None`
-means the gate is safe anywhere.
+Set it to the stages the gate is meant for, and binding it elsewhere raises
+`ManifestError` when the manifest loads:
 
-### Options and validating them
+```
+gate 'notice-parser' is not meant for stage(s) ['review']; it belongs in: ['ingest']
+```
 
-`[gate.options]` in the manifest arrives as the `options` dict. Implement
-`validate_options()` and anything you return refuses the manifest at load
-time with your message attached, which is the cheapest moment for a firm to
-learn it made a typo.
+`None` means any stage.
 
-### The rules a gate lives by
+### Options
 
-* **Deterministic.** Same message in, same findings out. A guardrail that
-  answers differently on Tuesday is not a guardrail.
-* **Read-only.** A gate never sends mail, writes to the store, or moves a
-  message. It returns findings.
-* **No model.** Gates decide; models propose, elsewhere, and a human approves.
-  A test in this repo asserts no shipped gate imports the model client.
-* **No network.** Docketry's promise is that nothing it reads leaves the
-  machine. A gate that phones out breaks that promise on the firm's behalf.
+`[gate.options]` in the manifest arrives as the `options` dict, with TOML types
+preserved. Implement `validate_options()` and whatever you return refuses the
+manifest at load time with your text attached:
 
-The first three are conventions your gate can technically violate — you are
-running your own Python on your own machine. They are the difference between
-a gate a firm can rely on and one it cannot.
+```
+guardrails.toml refused: gate 'long-subject' options: max_words must be a whole number
+```
 
-### Where gates come from
+`try-gate` reads options from the manifest binding if it exists, or takes
+`--option key=value` (values parsed as TOML, so `--option max_words=5` is an
+integer and `--option note=hello` is a string).
 
-`docketry gates` labels every gate with its source:
+### Where gates load from
 
-| Label | Means |
+| Source label | Loaded from |
 |---|---|
-| `built-in` | ships in the port, `docketry/core/gates/` |
-| `built-in (tools)` | ships with Docketry but plugs in from `docketry/tools/`, exactly as yours does |
-| `file:gates/x.py` | a `.py` file in your Docketry home's `gates/` directory |
-| `package:name` | an installed package declaring a `docketry.gates` entry point |
+| `built-in` | `docketry/core/gates/` |
+| `built-in (tools)` | `docketry/tools/`, registering the same way yours does |
+| `file:gates/x.py` | `<home>/gates/*.py`, in filename order |
+| `package:name` | an installed package's `docketry.gates` entry point |
 
-Home gates are loaded from exactly one directory — `<home>/gates/` — and
-nowhere else. It is arbitrary Python running with your permissions, the same
-trust you already extend to `guardrails.toml`, which is why the source is
-printed on every listing and by `docketry doctor`.
+Home gates load from `<home>/gates/` only. Files whose names start with `_` are
+skipped, so `_helpers.py` is available for import without being treated as a
+gate. Loading happens before the manifest is read, since a manifest binding an
+unregistered gate is a load error.
 
-A file that raises, or that registers no gate, stops the command with the
-filename and the error. It is never skipped quietly: a gate the operator
-believes is running and is not is worse than no gate at all.
+`<home>/gates/*.py` is executed with the operator's permissions — the same
+trust already given to `guardrails.toml`, which decides what the pipeline does.
+`docketry gates` and `docketry doctor` print the source of every gate.
 
-### Shipping it to other firms
+### Errors it will give you
 
-When a gate outgrows one file, make it a package and declare an entry point:
+| Situation | Message |
+|---|---|
+| file raises on import | `gate refused: broken.py failed to load: SyntaxError: ...` |
+| file registers nothing | `gate refused: empty.py registered no gates — a gate file needs @register ...` |
+| id already taken | `gate refused: gate id 'name-screen' is already registered by built-in ...` |
+| no `id` attribute | `MyGate has no id — a gate needs id = "some-name"` |
+| no `check` method | `gate 'my-gate' has no check(envelope, options) method` |
+| id not lowercase-hyphenated | `gate id 'My_Gate' should be lowercase words joined by hyphens` |
+| manifest binds an unknown gate | `guardrails.toml refused: unknown gate 'my-gate' (registered: ...)` |
+
+A file that fails to load stops the command rather than being skipped, so a
+gate is never silently absent. A duplicate id is refused rather than
+overwriting, so a home file cannot replace a shipped gate.
+
+### Rules a gate should follow
+
+Docketry cannot enforce these on your code — it is your Python on your machine
+— but the shipped gates follow them and the pipeline assumes them.
+
+- **Deterministic.** `check()` is called again after every approval. If it
+  answers differently on the same message, holds will clear at random.
+- **Read-only.** Return findings; do not write to the store, send mail, or
+  modify the message.
+- **No network.** Docketry's stated property is that nothing it reads leaves
+  the machine.
+- **No model.** Gates decide, models propose elsewhere. `tests/test_llm.py`
+  asserts no shipped gate imports the model client.
+
+### Distributing one
+
+For a gate that outgrows a single file, ship a package with an entry point:
 
 ```toml
 # pyproject.toml
@@ -231,19 +261,19 @@ When a gate outgrows one file, make it a package and declare an entry point:
 conflict-check = "my_package.gates:ConflictCheck"
 ```
 
-`pip install my-package` and it appears in `docketry gates` as
-`package:conflict-check`. Same registry, same rules; the only difference is
-that pip put it there. Point the entry point at the class, or at a module that
-registers on import — both read naturally.
+After `pip install my-package` it appears as `package:conflict-check`. The
+entry point may point at the gate class or at a module that registers on
+import.
 
-### Testing it
+### Testing one
 
-`try-gate` is for the write-run-read loop. For a test suite, call the gate
+`try-gate` is the edit-run-read loop. For a test suite, call the class
 directly — there is nothing to mock:
 
 ```python
 from docketry.core.envelope import parse_message
 from my_gates.zip_screen import ZipScreen
+
 
 def test_a_zip_is_held():
     envelope = parse_message(raw_bytes, source="test", fetched_at="now")
@@ -251,27 +281,24 @@ def test_a_zip_is_held():
     assert [f.severity for f in findings] == ["fail"]
 ```
 
-`try-gate --eml path/to/message.eml` runs your gate against a real saved
-message, which is the fastest way to check it against the thing that actually
-arrives from a court system.
+`docketry try-gate my-gate --eml saved.eml` runs against a real saved message,
+which is the fastest way to check a gate against actual court e-service mail.
 
 ---
 
-## Ideas worth building
+## Gate ideas
 
-Docketry ships the general ones. These are the shapes firms ask for:
+The shipped gates are the general cases. These are firm-specific by nature:
 
-* **Conflict check against a real list** — the shipped `name-screen` reads
-  terms from the manifest. A gate that reads your practice management
-  system's party list instead is a small piece of code and a much better
-  wall.
-* **Deadline extraction for a court your state uses** — the notice parser
-  covers Florida's portal and federal NEFs. Yours probably does something
-  else.
-* **Client-confidentiality screen** — hold anything mentioning a matter the
+- **Conflict check against a live party list.** `name-screen` reads terms from
+  the manifest; a gate reading your practice management system's party list
+  instead needs no manual updating.
+- **A notice parser for your state's system.** The shipped adapters cover
+  Florida's portal and federal NEFs.
+- **Matter-scoped confidentiality.** Hold anything naming a matter the
   recipient is walled off from, sourced from your own access rules.
-* **Retention policy** — flag messages that should not be in intake at all.
+- **Retention policy.** Flag mail that should not be in intake at all.
 
-If you build one, open an issue. The interesting question for this project is
-not how many gates it ships; it is whether the primitive is good enough that
-someone else's gate is indistinguishable from ours.
+If you write one, open an issue — whether a stranger's gate is
+indistinguishable from a shipped one is the thing this interface is trying to
+get right.

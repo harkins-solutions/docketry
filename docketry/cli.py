@@ -50,12 +50,11 @@ def _directory(home, registry=None):
 
 
 def _load_gates(home) -> None:
-    """The firm's own gates, and any installed by a package.
+    """Load <home>/gates/*.py and any installed entry-point gates.
 
-    Before the manifest, always: a manifest naming a gate refuses to load, so
-    the gates have to be there first. A file that fails to load stops the
-    command with the file named — a gate the operator believes is running and
-    is not is worse than no gate at all.
+    Runs before the manifest, which refuses to load if it binds a gate that
+    is not registered. A file that fails to load exits with its name rather
+    than being skipped.
     """
     from .core.gates import GateLoadError, load_home as _home_gates, load_installed
     try:
@@ -871,10 +870,8 @@ def cmd_doctor(args) -> None:
                           f" ({', '.join(outside)})" if outside else ""))
         for gate_id, src, _, _ in rows:
             if src.startswith("file:"):
-                # Say it plainly: this is code from the home directory, run
-                # with the operator's permissions.
                 report("PASS", f"  {gate_id} ← {_short_source(src, home)}"
-                               " (your own code)")
+                               " (executed from your home directory)")
     except GateLoadError as e:
         report("FAIL", f"gate refused: {e}")
     if cfg.manifest_path.exists():
@@ -1004,20 +1001,18 @@ def cmd_digest(args) -> None:
 
 
 def cmd_anchor(args) -> None:
-    """Print the head of the approval chain, to keep somewhere else.
+    """Verify the approval chain and print its head.
 
-    This is the half that makes the chain worth anything. The digests live on
-    the same disk as the rows they cover, so anyone who can edit a row can
-    recompute every digest after it. A copy of the head that left the machine
-    cannot be recomputed — a rewritten log then contradicts something the firm
-    already sent, printed or filed, and that contradiction is the finding.
+    The digests are on the same disk as the rows they cover, so a rewrite can
+    recompute them. A copy of the head kept elsewhere is what makes a rewrite
+    detectable. Refuses to print over a chain that does not verify.
     """
     cfg, _, store = _open(args.home)
     report = store.chain_report()
     if not report.ok:
-        sys.exit(f"{report.summary} — refusing to anchor a log that no longer"
-                 " verifies. The rows from that point on were edited after"
-                 " they were written; the earlier ones still stand.")
+        sys.exit(f"{report.summary}. Not anchoring a log that does not"
+                 " verify: rows from that point were changed after they were"
+                 " written. Earlier rows still verify.")
     stamp = st.utcnow()
     line = (f"docketry-anchor {stamp} approvals={report.chained}"
             f" head={report.head}")
@@ -1029,11 +1024,11 @@ def cmd_anchor(args) -> None:
         print(f"note: {report.unchained} approval(s) predate the chain and are"
               " not covered by this anchor")
     print()
-    print("Keep this line somewhere you cannot edit: mail it to yourself, paste")
-    print("it into a case note, print it. Docketry never sends anything, so")
-    print("moving it off this machine is the one step that is yours.")
-    print(f"(Appended to {path} as well — but that file is on the same disk as")
-    print(" the log it describes, so on its own it proves nothing.)")
+    print("Store this line outside this machine: mail it, print it, or paste it")
+    print("into a case note. If the approvals table is rewritten later, its head")
+    print("will no longer match this value.")
+    print(f"Also appended to {path}. That copy is on the same disk as the log it")
+    print("describes, so it does not detect a rewrite on its own.")
 
 
 def cmd_new_gate(args) -> None:
@@ -1054,12 +1049,12 @@ def cmd_new_gate(args) -> None:
     path.write_text(gate_source(gate_id, args.title or ""))
     print(f"wrote {path}")
     print()
-    print("It works as written: it holds any message with a long subject.")
-    print("Run it against a message before changing anything —")
+    print("As written it holds any message with a subject over five words.")
+    print("Run it against a message:")
     print(f'  docketry --home {args.home} try-gate {gate_id} \\')
     print('      --subject "this subject is quite a lot longer than five words"')
     print()
-    print("Then bind it by adding this to guardrails.toml:")
+    print("It runs once guardrails.toml binds it. Add:")
     print()
     for line in gate_binding_toml(gate_id).splitlines():
         print(f"    {line}")
@@ -1090,9 +1085,10 @@ def cmd_gates(args) -> None:
             print(f"{'':{width}}  {doc}")
     if not args.quiet:
         print()
-        print(f"{len(rows)} gate(s). 'built-in' ships with Docketry, 'file:' is")
-        print("yours from the gates/ directory, 'package:' came from pip.")
-        print("Writing one takes about five minutes: see GATES.md")
+        print(f"{len(rows)} gates. Sources: built-in = docketry/core/gates,")
+        print("built-in (tools) = docketry/tools, file: = <home>/gates/,")
+        print("package: = an installed docketry.gates entry point.")
+        print("Writing one: GATES.md")
 
 
 def _try_options(args) -> dict:
@@ -1122,10 +1118,10 @@ def _try_options(args) -> dict:
 
 
 def cmd_try_gate(args) -> None:
-    """Run one gate against one message and print what it found.
+    """Run one gate against one message and print its findings.
 
-    This is the loop a gate author needs: change the file, run this, read the
-    finding. No mailbox, no pipeline, no store, nothing to clean up.
+    Builds the message from the flags, or reads --eml. Options come from the
+    manifest binding unless --option overrides them. Nothing is stored.
     """
     from email.message import EmailMessage
 
@@ -1175,10 +1171,9 @@ def cmd_try_gate(args) -> None:
         print(f"result:  [{f.severity}] {f.summary}")
     if any(f.severity == SEVERITY_FAIL for f in findings):
         print()
-        print("A 'fail' finding is what holds a message. Whether that means"
-              " blocked or")
-        print("bounced to the review queue is the manifest's on_fail, not the"
-              " gate's call.")
+        print("A 'fail' finding holds the message. Whether that means blocked"
+              " or queued")
+        print("for review is the binding's on_fail in guardrails.toml.")
 
 
 def cmd_demo(args) -> None:
@@ -1257,18 +1252,20 @@ def cmd_demo(args) -> None:
     server = make_server(home / "store", pipeline, port=args.port,
                          registry=registry)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
-    print(f"Demo home: {home} (disposable)")
-    print("Three messages passed clean. Three stopped, and the two that matter")
-    print("are the reason a firm installs this:")
-    print("  - a conflicts email naming a screened party. BLOCKED by the ethical")
-    print("    wall. Only an attorney can release it, and the release is a row")
-    print("    with a name and a timestamp — which is what a grievance asks for.")
-    print("  - a court e-service notice whose portal changed its template. Held")
-    print("    rather than guessed at: a misread hearing date is a malpractice")
-    print("    claim, an unread one is a phone call.")
-    print("  - an unknown sender with an attachment. Routine hygiene, and the")
-    print("    least interesting thing here.")
-    print(f"Release them from the dashboard: {url}   (Ctrl-C to stop)")
+    print(f"Demo home: {home} (disposable, deleted with the directory)")
+    print("Six messages ingested. Three passed all gates. Three are held:")
+    print()
+    print("  name-screen     blocked          a conflicts email naming a")
+    print("                                   screened party. Releasable by")
+    print("                                   attorney only; the release is")
+    print("                                   recorded with a name and time.")
+    print("  notice-parser   pending_review   an e-service notice whose portal")
+    print("                                   changed its template, so the")
+    print("                                   required fields did not extract.")
+    print("  sender-scope    pending_review   an unknown sender, outside the")
+    print("                                   configured allow list.")
+    print()
+    print(f"Release them at {url}   (Ctrl-C to stop)")
     if not args.no_browser:
         webbrowser.open(url)
     try:

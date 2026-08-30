@@ -1,8 +1,12 @@
-"""Local SQLite store: the pipeline's single source of truth.
+"""SQLite store: messages, findings, approvals, notices, matters.
 
-Everything lives on the firm's own disk. Ingest is idempotent (keyed on the
-raw message hash), attachment bytes go to a content-addressed directory, and
-every gate finding and human approval lands in an audit table.
+One database and one attachment directory under the Docketry home. Ingest is
+idempotent on the raw message hash. Attachment bytes are written to a
+content-addressed path and read back verified against the digest recorded at
+ingest.
+
+Approvals are hash-chained; see ChainReport for what that does and does not
+establish.
 """
 from __future__ import annotations
 
@@ -45,9 +49,8 @@ CREATE TABLE IF NOT EXISTS findings(
   summary TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
--- Approvals are hash-chained: each row carries a digest over its own content
--- and the digest of the row before it. Read the limit in chain_report() before
--- deciding what that is worth.
+-- Approvals are hash-chained: sha256 covers this row's fields plus the
+-- previous row's digest. See ChainReport for the limits of that.
 CREATE TABLE IF NOT EXISTS approvals(
   id INTEGER PRIMARY KEY,
   message_id INTEGER NOT NULL REFERENCES messages(id),
@@ -119,12 +122,11 @@ class StoreIntegrityError(RuntimeError):
     """Stored bytes are missing or no longer match what ingest recorded."""
 
 
-# The chain's starting point, so an empty log still has a definite head.
+# Starting digest, so an empty log still has a definite head.
 GENESIS = "docketry:approvals:v1"
 
-# The fields a row's digest covers. The row id is deliberately not among them:
-# the chain itself fixes the order, and covering an id the database assigns
-# would mean writing the row before knowing what to write.
+# Fields covered by a row's digest. The row id is not among them: order is
+# fixed by the chain itself, and the id is assigned by SQLite at insert.
 CHAINED_FIELDS = ("message_id", "stage", "gate_id", "approved_by", "role",
                   "note", "created_at")
 
@@ -139,18 +141,21 @@ def approval_digest(prev: str, row) -> str:
 
 @dataclass
 class ChainReport:
-    """What the approval chain can and cannot tell you.
+    """Result of re-deriving every digest in the approvals table.
 
-    `ok` means every chained row still hashes to what it claims and points at
-    the row before it, so nothing was edited, deleted or reordered in place.
+    ok=True means each chained row still hashes to its recorded digest and
+    points at the row before it: nothing was edited, deleted, reordered or
+    inserted in place.
 
-    It does NOT mean the log is authentic. The database sits on the firm's own
-    disk with no key, so anyone who can edit a row can recompute every digest
-    after it and hand you a chain that verifies. What makes a rewritten
-    history detectable is an anchor kept somewhere the editor cannot reach —
-    `docketry anchor` prints one to mail, print or paste into a case note. The
-    chain catches the careless edit and makes the deliberate one require an
-    accomplice: the copy of the head you already sent.
+    It does not establish authenticity. The database has no key and sits on
+    the same disk as everything else, so anyone who can write to it can
+    recompute every digest after the row they changed (tests/test_chain.py
+    does this and asserts the result verifies). Detecting that requires
+    comparing the head against a copy kept elsewhere — `docketry anchor`.
+
+    unchained counts rows written before v0.16, which have no digest. They
+    are reported rather than back-filled, since a chain computed after the
+    fact would be indistinguishable from one that had always been there.
     """
     total: int
     chained: int
@@ -188,10 +193,8 @@ class Store:
         if "doc_type" not in cols:
             with self.db:
                 self.db.execute("ALTER TABLE attachments ADD COLUMN doc_type TEXT")
-        # Stores written before the chain existed keep their approvals; the
-        # rows are marked unchained rather than back-filled, because a chain
-        # computed after the fact over rows nobody was protecting proves
-        # nothing and would look exactly like one that had been there.
+        # Pre-v0.16 stores keep their approval rows; the columns are added
+        # empty and those rows are counted as unchained (see ChainReport).
         cols = {r["name"] for r in self.db.execute("PRAGMA table_info(approvals)")}
         with self.db:
             if "prev_sha256" not in cols:
@@ -289,10 +292,7 @@ class Store:
         return row["sha256"] if row else GENESIS
 
     def chain_report(self) -> ChainReport:
-        """Walk the approval log and re-derive every digest.
-
-        What this proves, and what it does not, is written out in ChainReport.
-        """
+        """Re-derive every digest in the approvals table. See ChainReport."""
         rows = self.db.execute("SELECT * FROM approvals ORDER BY id").fetchall()
         prev, chained, unchained, broken_at = GENESIS, 0, 0, None
         for row in rows:
@@ -409,12 +409,11 @@ class Store:
         ).fetchall()
 
     def attachment_bytes(self, msg_id: int) -> dict[str, bytes]:
-        """The stored bytes of one message's attachments, keyed by digest.
+        """Stored attachment bytes for one message, keyed by SHA-256.
 
-        A missing or altered blob raises rather than returning nothing. The
-        bytes are content-addressed, so the digest that names the file is also
-        the check on it — and a gate handed zero bytes, or different ones,
-        would report a clean result on a document nobody has read.
+        Raises StoreIntegrityError if a file is missing or no longer matches
+        the digest recorded at ingest, rather than returning empty bytes that
+        a gate would read as a clean document.
         """
         out: dict[str, bytes] = {}
         for row in self.attachments_for(msg_id):

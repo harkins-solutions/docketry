@@ -1,23 +1,23 @@
-# Who may release what. Copy this to your Docketry home as roles.toml and
-# rewrite it for your firm — the names below are placeholders, not advice.
+# Who may release what. Copy to your Docketry home as roles.toml and rewrite
+# it for your firm; the names below are placeholders.
 #
-# Optional. Without this file nothing validates the `authority` values in your
-# guardrails and workflows, which is how Docketry behaved before it existed.
-# With it, a gate or a workflow that names a role you have not declared is
-# refused when the config loads, rather than at the moment someone needs it.
+# Optional. Without this file, an approval's --role must equal the gate's
+# `authority` exactly, and nothing checks that the authority names a role the
+# firm actually has.
 #
-# may_release lets seniority work. A role listed against a gate id can release
-# that gate even when the gate names someone else; "*" releases anything.
-# Without it, someone senior is blocked by a hold meant for someone junior.
+# With it:
+#   * a gate or workflow naming an undeclared role is refused when config
+#     loads, not when someone needs to release something;
+#   * may_release lets a role clear gates whose authority names another role
+#     ("*" clears anything), so an attorney can release a paralegal's hold;
+#   * a person listed below cannot approve under a role they do not hold.
 #
-# A role here is an attestation recorded against a name. Docketry has no login.
-# This catches mistakes; it does not authenticate anyone.
+# Docketry has no login. A role is a name typed at approval time and checked
+# against this file: it catches mistakes, not lies.
 
-# These two match the roles used by the guardrail examples that ship with
-# Docketry, so copying this file in does not immediately refuse your manifest.
-# Rename them the moment they stop matching what your firm actually calls
-# these jobs — a registry that disagrees with your vocabulary is worse than
-# none, because people start working around it.
+# These two names match the shipped guardrail examples, so copying this file
+# in does not immediately refuse your manifest. Rename them to whatever your
+# firm calls these jobs, and update the `authority` values to match.
 
 [[role]]
 name = "paralegal"
@@ -30,8 +30,8 @@ name = "attorney"
 description = "Releases anything."
 may_release = ["*"]
 
-# People are optional. List someone and Docketry will refuse a role they do
-# not hold; leave the list out entirely and any name may claim any role.
+# People are optional. List someone and they cannot approve under a role not
+# listed here; leave the section out and any name may claim any declared role.
 # [[person]]
 # name = "Dana Reyes"
 # roles = ["staff"]

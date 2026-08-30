@@ -1,9 +1,12 @@
-"""MIME message -> normalized Envelope.
+"""MIME message -> Envelope.
 
-The port's one job: whatever arrives, reduce it to the same provenance-stamped
-shape before anything downstream sees it. Parsing is stdlib-only and read-only;
-the raw message is never modified, and the raw hash travels with the envelope
-so provenance survives every later stage.
+Parsing is stdlib-only and read-only: the raw message is never modified, and
+its SHA-256 travels with the envelope as the deduplication key and the
+provenance record. Handles transfer encodings, HTML-only bodies (converted to
+text), and attachment filenames (reduced to a safe basename).
+
+Everything downstream — gates, notice adapters, the classifier — reads the
+Envelope rather than the MIME tree.
 """
 from __future__ import annotations
 

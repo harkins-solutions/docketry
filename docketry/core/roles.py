@@ -1,24 +1,18 @@
-"""Who may release what — declared by the firm, checked when config loads.
+"""Role registry: which roles exist, and what each may release.
 
-Roles were free text: a gate said `authority = "paralegal"` and nothing
-anywhere knew whether such a role existed. A typo in a manifest failed closed
-at five o'clock on a Friday, a firm that calls the job "associate" could have
-a gate quietly demanding "attorney", and — the one that actually bites — an
-attorney could not release a hold marked for a paralegal, because clearing
-compared the two strings and found them different.
+Optional. Without roles.toml, an approval's role must equal the gate's
+`authority` string exactly, and nothing validates that the authority names a
+role the firm has. With it:
 
-Declaring roles fixes all three, and it does it at load time, where a mistake
-is cheap. `may_release` is what lets seniority work: an attorney with `["*"]`
-can release anything, so nobody is blocked by a gate meant for someone junior.
+  * a gate or workflow naming an undeclared role is refused when config
+    loads, rather than when someone needs to release something;
+  * `may_release` lets a role clear gates whose authority names another role
+    ("*" clears anything), so an attorney can release a paralegal's hold;
+  * a person listed under [[person]] cannot approve under a role they do not
+    hold.
 
-Read the limit plainly. Docketry has no login and is not going to grow one:
-a role here is an ATTESTATION, recorded against a name, not an authenticated
-identity. This registry stops mistakes. It does not stop lies, and anything
-that suggested otherwise would be worse than leaving it out.
-
-The file is optional. Without it nothing is validated, which is how every
-existing installation already works — but `doctor` says so out loud, because
-"unchecked" should never be something you discover later.
+Docketry has no login. A role here is a string typed at approval time and
+checked against this file: it catches mistakes, not lies.
 """
 from __future__ import annotations
 
@@ -66,8 +60,11 @@ class Registry:
         return self.people.get(person.strip().casefold())
 
     def person_may_claim(self, person: str, role: str) -> bool:
-        """People are optional. Someone unlisted is not refused — a firm should
-        not have to enumerate its staff before it can approve anything."""
+        """True if this person may claim this role.
+
+        People are optional: someone unlisted may claim any declared role, so
+        a firm need not enumerate its staff before approving anything.
+        """
         held = self.roles_of(person)
         return True if held is None else role in held
 
@@ -87,9 +84,8 @@ def load_roles(path: str | Path) -> Registry:
 def parse_roles(data: dict) -> Registry:
     """Validate an already-parsed registry. Same rules, no file needed.
 
-    The wizard builds one in memory and checks it before writing anything, and
-    it has to be checked by THIS code — a second construction path that agreed
-    with itself would let the wizard write a file that load_roles refuses.
+    Used by the wizard to check what it is about to write, through this code
+    rather than a second construction path that could disagree with it.
     """
     reg = Registry()
     for i, r in enumerate(data.get("role", []), start=1):
@@ -131,13 +127,12 @@ def refuse_approval(registry, *, person: str, role: str, gate_id: str,
                     required: str) -> str | None:
     """Authorize one approval. Returns the reason to refuse it, or None.
 
-    Every surface that records an approval goes through here — the CLI and the
-    review UI — because the rule split across two call sites is how seniority
-    came to work in `advance()` and nowhere else. Without a registry the old
-    strict rule stands: the recorded role must be the role the gate names.
-    With one, `may_release` covers the gate, and the claimed role is checked
-    against the declared holder, which is the whole value an attestation can
-    carry when there is no login behind it.
+    The CLI and the review UI both call this; the rule lives in one place so
+    the two surfaces cannot diverge.
+
+    Without a registry: the recorded role must equal the gate's authority.
+    With one: the role must be declared, its may_release must cover the gate
+    (or match the authority), and a listed person must actually hold it.
     """
     if registry is None:
         if role != required:

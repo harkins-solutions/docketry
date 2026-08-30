@@ -1,16 +1,16 @@
-"""The gate runner: enforcement lives here, not in prompts.
+"""The gate runner: stages, findings, and the only path forward.
 
-A message advances through the manifest's stages. Entering a stage runs every
-gate bound to it. A failed gate resolves per its configured on_fail:
+A message enters a stage; every gate bound to that stage runs against it. A
+gate returning a finding with severity `fail` holds the message unless a
+recorded approval clears it, and how it is held comes from the binding:
 
-  block  -> the message stops; only a recorded override by the gate's declared
-            authority lets it continue.
-  bounce -> the message parks in the human review queue; a recorded approval
-            by the declared authority releases it.
-  warn   -> the finding is recorded and the message proceeds.
+  block  -> status `blocked`
+  bounce -> status `pending_review`, listed by `docketry queue`
+  warn   -> finding recorded, message continues
 
-advance() is the only code path that moves a message forward, and it re-checks
-approvals every time — there is no advisory mode and no bypass flag.
+advance() is the only function that moves a message to the next stage. It
+re-runs the current stage's gates first, so a hold clears because the gates
+clear it, not because a stored status says so. There is no bypass flag.
 """
 from __future__ import annotations
 
@@ -90,10 +90,8 @@ class Runner:
             if self.registry is None:
                 cleared = binding.authority in approved
             else:
-                # With a registry, seniority works: a role whose may_release
-                # covers this gate can release it even though the gate names
-                # someone else. Without one, an attorney could not clear a
-                # hold marked for a paralegal, because this compared strings.
+                # With a registry, a role whose may_release covers this gate
+                # clears it even when the binding names another role.
                 cleared = any(
                     self.registry.can_release(r, binding.gate.id, binding.authority)
                     for r in approved
@@ -115,12 +113,9 @@ class Runner:
     def _envelope(self, msg_id: int) -> Envelope:
         """The stored envelope, with attachment bytes read back from disk.
 
-        The bytes matter. A gate that inspects a document's contents gets the
-        real thing at ingest, where the parsed message is still in hand; if
-        this rebuilt attachments empty, that same gate would quietly find
-        nothing when advance() re-ran it. Re-running gates is the whole basis
-        on which a hold is trusted, so the re-run has to see what the first
-        run saw. The store verifies each digest as it reads.
+        Gates run again on every advance(), so a gate that inspects
+        attachment content must see the same bytes it saw at ingest. The
+        store verifies each blob against its recorded digest as it reads.
         """
         import json
 
@@ -155,7 +150,7 @@ class Runner:
         env = self._envelope(msg_id)
 
         if row["status"] in (st.BLOCKED, st.PENDING_REVIEW):
-            # Holds only clear through recorded approvals; re-run the stage.
+            # Re-run this stage: a hold clears only if the gates now pass.
             status = self._run_stage_gates(msg_id, row["stage"], env)
             if status != st.OK:
                 self.store.set_state(msg_id, status=status)

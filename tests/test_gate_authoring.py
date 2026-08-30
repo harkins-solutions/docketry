@@ -105,8 +105,8 @@ class TestLoadingAGateFromTheHome(unittest.TestCase):
 
 class TestTheRegistryRefusesTheDangerousThings(unittest.TestCase):
     def test_a_second_gate_cannot_take_an_id_that_is_taken(self):
-        # The hazard: a home file quietly replacing name-screen with something
-        # that returns no findings, and the wall silently stopping.
+        # Otherwise a home file could replace name-screen with a gate that
+        # returns no findings, and the screen would stop with no error.
         with clean_registry():
             with self.assertRaises(GateLoadError) as ctx:
                 @gates.register
@@ -117,7 +117,8 @@ class TestTheRegistryRefusesTheDangerousThings(unittest.TestCase):
                         return []
         message = str(ctx.exception)
         self.assertIn("already registered", message)
-        self.assertIn("stops guarding", message)
+        self.assertIn("built-in", message)          # names the current holder
+        self.assertIn("Pick another id", message)
 
     def test_the_shipped_wall_is_still_the_shipped_wall(self):
         from docketry.core.gates.builtin import NameScreen

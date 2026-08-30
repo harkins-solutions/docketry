@@ -1,26 +1,23 @@
-"""Gate registry: manifests reference gates by id; plugins register here.
+"""Gate registry. Manifests bind gates by id; this is where ids resolve.
 
-The port ships the plug board and the hygiene gates. Everything else that
-gates — the notice parser, the document classifier, and whatever a firm or a
-third party writes — arrives the same way: a class with an `id` and a
-`check()`, handed to `register()`.
+A gate is any class with an `id` and a `check(envelope, options)` method,
+passed to `register()`. Three load paths, all reported by `docketry gates`
+and `docketry doctor`:
 
-There are three ways in, and a gate knows which one it came through because
-`doctor` and `docketry gates` say so out loud:
+  built-in        registered on import from docketry/core/gates/
+  file:<path>     a .py file in <home>/gates/, loaded by load_home()
+  package:<name>  an installed package's `docketry.gates` entry point
 
-  built-in        shipped in this package
-  file:<path>     a .py file in the firm's own `<home>/gates/` directory
-  package:<dist>  an installed package declaring a `docketry.gates` entry point
+Files in <home>/gates/ are imported and run with the operator's permissions.
+Docketry loads from that directory and no other. A file that raises, or
+registers nothing, raises GateLoadError rather than being skipped, so a gate
+is never silently absent.
 
-The middle one is the five-minute path — drop a file next to guardrails.toml
-and it is live on the next command. It is also arbitrary code running with the
-operator's permissions, which is why it loads from exactly one directory
-inside the Docketry home and from nowhere else, and why every listing says
-where each gate came from.
+register() refuses a duplicate id: two gates with one id leave a manifest
+unable to say which it means, and a home file could otherwise replace a
+shipped gate.
 
-Registration refuses a duplicate id. Silently replacing `name-screen` with
-something that returns no findings is precisely the failure this whole
-project exists to make impossible, and a typo should not be able to do it.
+See GATES.md for the authoring interface.
 """
 from __future__ import annotations
 
@@ -29,18 +26,17 @@ from pathlib import Path
 
 _REGISTRY: dict[str, type] = {}
 _SOURCES: dict[str, str] = {}
-# Files already imported in this process, so loading twice is a no-op rather
-# than a self-collision. One CLI command loads once, but the review UI and any
-# long-running caller load repeatedly, and a gate colliding with its own
-# previous import would have been an obscure way to break them.
+# Files already imported in this process. Re-importing would build a second
+# class object with the same id and trip the duplicate check, which matters
+# for the review UI and any other long-running caller that loads more than
+# once.
 _LOADED: dict[str, list[str]] = {}
 
 BUILTIN = "built-in"
 GATES_DIR = "gates"
 ENTRY_POINT_GROUP = "docketry.gates"
 
-# Gate ids appear in every manifest a firm reads. Keeping them to one shape
-# means a manifest never has to be squinted at to see which name is which.
+# One shape for ids, so manifests stay consistent: lowercase words, hyphens.
 ID_SHAPE = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 
 
@@ -53,7 +49,7 @@ def register(cls: type, source: str = BUILTIN) -> type:
     if not gate_id or not isinstance(gate_id, str):
         raise GateLoadError(
             f"{cls.__name__} has no id — a gate needs `id = \"some-name\"`,"
-            " which is the name manifests bind it by"
+            " the name manifests bind it by"
         )
     if not ID_SHAPE.match(gate_id):
         raise GateLoadError(
@@ -62,15 +58,14 @@ def register(cls: type, source: str = BUILTIN) -> type:
         )
     if not callable(getattr(cls, "check", None)):
         raise GateLoadError(
-            f"gate '{gate_id}' has no check(envelope, options) method — that is"
-            " the one thing a gate has to do"
+            f"gate '{gate_id}' has no check(envelope, options) method"
         )
     if gate_id in _REGISTRY and _REGISTRY[gate_id] is not cls:
         raise GateLoadError(
-            f"gate id '{gate_id}' is already registered by {_SOURCES[gate_id]}."
-            " Two gates with one id means a manifest cannot say which it means,"
-            " and replacing a shipped gate by accident is how a guardrail"
-            " quietly stops guarding. Pick another id."
+            f"gate id '{gate_id}' is already registered by"
+            f" {_SOURCES[gate_id]}. Ids must be unique: a manifest binding"
+            " this id could not say which gate it meant, and registering it"
+            " twice would replace the existing gate. Pick another id."
         )
     _REGISTRY[gate_id] = cls
     _SOURCES.setdefault(gate_id, source)
@@ -116,9 +111,9 @@ def _adopt(before: set[str], source: str) -> list[str]:
 def load_file(path: str | Path) -> list[str]:
     """Import one gate file and return the ids it registered.
 
-    A file that raises, or that registers nothing, is an error rather than a
-    quiet no-op: a gate the operator believes is running and is not is worse
-    than no gate at all.
+    Raises GateLoadError if the file fails to import or registers nothing,
+    so a gate that is configured but not running is never silent. Importing
+    the same path twice in one process returns the first result.
     """
     import importlib.util
 
@@ -171,8 +166,8 @@ def load_home(home: str | Path) -> list[str]:
 def load_installed() -> list[str]:
     """Gates from installed packages declaring a `docketry.gates` entry point.
 
-    The distribution path, for a gate that outgrows one file. Same registry,
-    same rules — the only difference is that pip put it there.
+    The entry point may name the gate class or a module that registers on
+    import. Both are accepted.
     """
     from importlib.metadata import entry_points
 
@@ -194,5 +189,7 @@ def load_installed() -> list[str]:
     return loaded
 
 
-# The hygiene gates register on import; nothing here needs a tool.
+# The four hygiene gates register on import. notice-parser and doc-classifier
+# live in docketry/tools and register through the same public path a
+# third-party gate uses.
 from . import builtin  # noqa: E402,F401

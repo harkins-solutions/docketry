@@ -1,9 +1,4 @@
-"""What `docketry new-gate` writes: a gate that already works.
-
-A blank file with a TODO in it is not a starting point, it is homework. This
-writes a gate that runs, holds something, and explains every part of itself in
-comments — so the first thing an author does is change a working thing rather
-than assemble one.
+"""The gate file `docketry new-gate` writes.
 
 Placeholders are substituted by plain replacement rather than str.format,
 because the template is Python source and Python source is full of braces.
@@ -12,19 +7,10 @@ from __future__ import annotations
 
 GATE_TEMPLATE = '''"""__TITLE__
 
-A Docketry gate. It gets one message and answers one question about it.
+Written by `docketry new-gate __GATE_ID__`. As written, this gate holds any
+message whose subject runs longer than `max_words` words.
 
-The rules a gate lives by:
-
-  * It is deterministic. Same message in, same findings out — a guardrail
-    that answers differently on Tuesday is not a guardrail.
-  * It reads. It never sends mail, writes to the store, or moves a message.
-    A `fail` finding is how a gate stops something; the runner and a recorded
-    human approval are what move it again.
-  * It never consults a model. Models propose elsewhere; gates decide. A test
-    in the Docketry repo enforces that separation for the shipped gates.
-  * It says why. Your summary is what someone reads at five o'clock to
-    understand why their message is sitting in the queue. Write it for them.
+Reference: GATES.md in the Docketry repository.
 """
 from docketry.core.gates import register
 from docketry.core.pipeline import Finding, SEVERITY_FAIL, SEVERITY_INFO, SEVERITY_WARN
@@ -34,18 +20,18 @@ from docketry.core.pipeline import Finding, SEVERITY_FAIL, SEVERITY_INFO, SEVERI
 class __CLASS__:
     """__TITLE__"""
 
-    # How manifests bind this gate. Lowercase words joined by hyphens.
+    # The name manifests bind this gate by. Lowercase words joined by hyphens.
     id = "__GATE_ID__"
 
-    # Which stages this gate is meant for; None means anywhere. Binding it
-    # outside these refuses when the manifest loads, rather than at 5pm.
+    # Stages this gate may be bound to; None means any. Binding it elsewhere
+    # is an error when guardrails.toml loads.
     allowed_stages = None
 
     def validate_options(self, options: dict) -> list[str]:
-        """Optional. Return problems with this gate's [gate.options] block.
+        """Check this gate's [gate.options] block. Optional.
 
-        Anything returned here refuses the manifest at load time, which is the
-        cheapest possible moment for a firm to find out it made a typo.
+        Anything returned refuses the manifest at load time, with your text
+        in the error. Return an empty list if the options are usable.
         """
         problems = []
         if "max_words" in options:
@@ -56,17 +42,24 @@ class __CLASS__:
         return problems
 
     def check(self, envelope, options: dict) -> list[Finding]:
-        """The whole job. Return findings; an empty list means it passes.
+        """Examine one message. Return findings; an empty list passes it.
 
-        `envelope` carries message_id, from_addr, to, cc, subject, body_text,
-        date, source, fetched_at, raw_sha256, and attachments — each with
-        filename, content_type, size, sha256 and content (the real bytes,
-        every time this runs).
+        envelope:
+            message_id, from_addr, to, cc, subject, body_text, date,
+            source, fetched_at, raw_sha256, in_reply_to, references,
+            and attachments — each with filename, content_type, size,
+            sha256 and content (bytes).
 
-        Severity decides what happens next. SEVERITY_FAIL is the only one that
-        holds a message; HOW it is held (block, bounce, warn) is the manifest's
-        `on_fail`, not this gate's business. WARN and INFO are recorded and the
-        message keeps moving.
+        options:
+            the [gate.options] table from guardrails.toml, TOML types intact.
+
+        Finding(gate_id, severity, summary). Only SEVERITY_FAIL can hold a
+        message; whether that means blocked or queued for review is the
+        manifest's on_fail, not this gate's. WARN and INFO are recorded and
+        the message continues.
+
+        check() runs again after every approval, so it must return the same
+        result for the same message.
         """
         max_words = int(options.get("max_words", 5))
         words = len(envelope.subject.split())
@@ -82,7 +75,7 @@ class __CLASS__:
 
 
 def gate_source(gate_id: str, title: str = "") -> str:
-    """The scaffold, with this gate's id, class name and title filled in."""
+    """The scaffold with this gate's id, class name and title filled in."""
     cls = "".join(part.capitalize() for part in gate_id.split("-")) or "MyGate"
     title = title or f"{gate_id.replace('-', ' ').capitalize()}."
     return (GATE_TEMPLATE
@@ -92,7 +85,7 @@ def gate_source(gate_id: str, title: str = "") -> str:
 
 
 def gate_binding_toml(gate_id: str, authority: str = "paralegal") -> str:
-    """The block to paste into guardrails.toml to actually run it."""
+    """The guardrails.toml block that binds this gate."""
     return (
         "[[gate]]\n"
         f'id = "{gate_id}"\n'
