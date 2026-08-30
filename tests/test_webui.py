@@ -1,3 +1,4 @@
+import hashlib
 import http.client
 import json
 import re
@@ -22,7 +23,8 @@ def held_envelope(i=0):
         message_id=f"m{i}", from_addr=f"stranger{i}@random.net", to=[], cc=[],
         date="", subject=f"invoice {i}", body_text="pay up",
         attachments=[Attachment(filename="statement.pdf", content_type="application/pdf",
-                                sha256=f"{i:064d}"[:64], size=4, content=b"%PDF")],
+                                sha256=hashlib.sha256(b"%PDF").hexdigest(),
+                                size=4, content=b"%PDF")],
         raw_sha256=f"{i:064x}".rjust(64, "a")[:64], source="t", fetched_at="now",
     )
 
@@ -133,6 +135,72 @@ Judge: Hon. A. Rivera
 Hearing Date: 09/14/2026
 Time: 10:30 AM
 """
+
+
+class TestWebUIWithARegistry(unittest.TestCase):
+    """Seniority has to work where people actually click.
+
+    The queue page submitted the gate's own authority as a hidden field, so an
+    attorney reviewing a paralegal hold in the UI had no way to say so.
+    """
+
+    def setUp(self):
+        from docketry.roles import load_roles
+        self.tmp = tempfile.TemporaryDirectory()
+        roles = Path(self.tmp.name) / "roles.toml"
+        roles.write_text('[[role]]\nname="paralegal"\nmay_release=["sender-scope"]\n'
+                         '[[role]]\nname="attorney"\nmay_release=["*"]\n'
+                         '[[person]]\nname="Dana Reyes"\nroles=["paralegal"]\n')
+        self.registry = load_roles(roles)
+        self.pipeline = load_manifest(MANIFEST)
+        store = Store(self.tmp.name)
+        self.msg_id = store.ingest(held_envelope(), first_stage="ingest")
+        Runner(self.pipeline, store, registry=self.registry).enter(self.msg_id)
+        store.close()
+        self.server = make_server(self.tmp.name, self.pipeline, port=0,
+                                  registry=self.registry)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.tmp.cleanup()
+
+    _get = TestWebUI._get
+    _post = TestWebUI._post
+    _token = TestWebUI._token
+
+    def test_the_queue_offers_the_roles_that_may_release_the_gate(self):
+        _, body = self._get()
+        self.assertIn('<select name="role">', body)
+        self.assertIn('<option value="attorney"', body)
+
+    def test_an_attorney_releases_a_paralegal_hold(self):
+        status, _ = self._post("/approve", {
+            "token": self._token(), "message": self.msg_id,
+            "gate": "sender-scope", "by": "Alex Vance", "role": "attorney"})
+        self.assertEqual(status, 303)
+        store = Store(self.tmp.name)
+        self.assertEqual(store.get_message(self.msg_id)["status"], st.DONE)
+        self.assertIn("attorney",
+                      store.approval_roles(self.msg_id, "ingest", "sender-scope"))
+        store.close()
+
+    def test_a_listed_person_cannot_claim_a_role_they_do_not_hold(self):
+        status, body = self._post("/approve", {
+            "token": self._token(), "message": self.msg_id,
+            "gate": "sender-scope", "by": "Dana Reyes", "role": "attorney"})
+        self.assertEqual(status, 400)
+        self.assertIn("roles.toml lists", body)
+        store = Store(self.tmp.name)
+        self.assertEqual(store.get_message(self.msg_id)["status"], st.PENDING_REVIEW)
+        store.close()
+
+    def test_an_undeclared_role_is_refused(self):
+        status, body = self._post("/approve", {
+            "token": self._token(), "message": self.msg_id,
+            "gate": "sender-scope", "by": "Alex Vance", "role": "wizard"})
+        self.assertEqual(status, 400)
 
 
 class TestAdapterPanel(unittest.TestCase):

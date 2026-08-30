@@ -61,10 +61,14 @@ class Registry:
         r = self.roles.get(role)
         return bool(r and r.releases(gate_id))
 
+    def roles_of(self, person: str) -> tuple[str, ...] | None:
+        """The roles a person is listed with, or None when they are unlisted."""
+        return self.people.get(person.strip().casefold())
+
     def person_may_claim(self, person: str, role: str) -> bool:
         """People are optional. Someone unlisted is not refused — a firm should
         not have to enumerate its staff before it can approve anything."""
-        held = self.people.get(person.strip().casefold())
+        held = self.roles_of(person)
         return True if held is None else role in held
 
     def check_authority(self, where: str, role: str) -> None:
@@ -112,3 +116,33 @@ def load_if_present(home: str | Path) -> Registry | None:
     """The registry when the firm has written one, otherwise None."""
     path = Path(home) / "roles.toml"
     return load_roles(path) if path.exists() else None
+
+
+def refuse_approval(registry, *, person: str, role: str, gate_id: str,
+                    required: str) -> str | None:
+    """Authorize one approval. Returns the reason to refuse it, or None.
+
+    Every surface that records an approval goes through here — the CLI and the
+    review UI — because the rule split across two call sites is how seniority
+    came to work in `advance()` and nowhere else. Without a registry the old
+    strict rule stands: the recorded role must be the role the gate names.
+    With one, `may_release` covers the gate, and the claimed role is checked
+    against the declared holder, which is the whole value an attestation can
+    carry when there is no login behind it.
+    """
+    if registry is None:
+        if role != required:
+            return (f"gate '{gate_id}' requires role '{required}',"
+                    f" not '{role}'")
+        return None
+    if not registry.known(role):
+        return (f"'{role}' is not a declared role"
+                f" (declared: {', '.join(registry.names()) or 'none'})")
+    if not registry.can_release(role, gate_id, required):
+        return (f"gate '{gate_id}' requires '{required}', and '{role}' does not"
+                f" release it — add '{gate_id}' to that role's may_release in"
+                " roles.toml if it should")
+    if not registry.person_may_claim(person, role):
+        held = ", ".join(registry.roles_of(person) or ())
+        return (f"roles.toml lists {person} as {held}, not '{role}'")
+    return None

@@ -80,6 +80,11 @@ def cmd_init(args) -> None:
     print(f"  manifest:  {manifest}")
     if not password:
         print("  password:  set DOCKETRY_IMAP_PASSWORD in the environment")
+    elif _os.name == "nt":
+        # Do not let "stored 0600" imply a protection Windows does not give.
+        print("  password:  stored in config.toml — on Windows that file's"
+              " permissions come from the folder it sits in, not from 0600."
+              " Set DOCKETRY_IMAP_PASSWORD instead if others use this machine.")
     print("next: point a forwarding rule at the intake mailbox, then run: docketry poll")
 
 
@@ -89,7 +94,7 @@ def cmd_poll(args) -> None:
         sys.exit("no [mailbox] configured — run: docketry init")
     if not cfg.mailbox.password:
         sys.exit("no mailbox password (set DOCKETRY_IMAP_PASSWORD)")
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     first_stage = pipeline.stages[0]
     adapters_file = cfg.home / "adapters.toml"
     adapter_stack = notices_mod.stack(adapters_file if adapters_file.exists() else None)
@@ -157,14 +162,16 @@ def cmd_approve(args) -> None:
     if binding is None:
         sys.exit(f"gate '{args.gate}' is not bound at stage '{row['stage']}'"
                  f" (bound here: {', '.join(sorted(stage_bindings)) or 'none'})")
-    if args.role != binding.authority:
-        sys.exit(f"gate '{args.gate}' at stage '{row['stage']}' requires role"
-                 f" '{binding.authority}', not '{args.role}' — approval not recorded")
+    from .roles import refuse_approval
+    refusal = refuse_approval(cfg.registry, person=args.by, role=args.role,
+                              gate_id=args.gate, required=binding.authority)
+    if refusal:
+        sys.exit(f"at stage '{row['stage']}': {refusal} — approval not recorded")
     store.add_approval(
         args.message, row["stage"], args.gate,
         approved_by=args.by, role=args.role, note=args.note or "",
     )
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     try:
         status = runner.advance(args.message)
         print(f"approved; message {args.message} -> {status}")
@@ -173,8 +180,8 @@ def cmd_approve(args) -> None:
 
 
 def cmd_advance(args) -> None:
-    _, pipeline, store = _open(args.home)
-    runner = Runner(pipeline, store, registry=_registry(args.home))
+    cfg, pipeline, store = _open(args.home)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     try:
         status = runner.advance(args.message)
         print(f"message {args.message} -> {status}")
@@ -764,7 +771,7 @@ def cmd_ui(args) -> None:
     store.close()
     server = make_server(cfg.store_path, pipeline, port=args.port,
                          home=cfg.home, firm_domains=cfg.firm_domains,
-                         directory=cfg.directory)
+                         directory=cfg.directory, registry=cfg.registry)
     print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()

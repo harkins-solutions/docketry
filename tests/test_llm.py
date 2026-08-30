@@ -1,9 +1,11 @@
 """The local-only property, enforced rather than documented."""
 import json
+import socket
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest import mock
 
 from docketry.llm import (
     LLMConfig,
@@ -12,6 +14,7 @@ from docketry.llm import (
     probe,
     propose,
     resolve,
+    vet,
 )
 
 PKG = Path(__file__).resolve().parent.parent / "docketry"
@@ -125,6 +128,88 @@ class TestProposeAgainstALocalServer(unittest.TestCase):
     def test_probe_reports_a_public_endpoint_as_refused(self):
         self.assertIn("REFUSED", probe(LLMConfig(base_url="https://api.openai.com",
                                                  model="gpt-4")))
+
+
+class TestWhereThePacketsActuallyGo(unittest.TestCase):
+    """The check has to be about the address, and about THAT address."""
+
+    def setUp(self):
+        REPLY["content"] = None
+        REPLY["reasoning_content"] = None
+
+    def test_a_dot_local_name_is_not_trusted_on_its_face(self):
+        # `models.local` is just a name. Any resolver is free to answer it
+        # with a public address, and a check that short-circuits on the
+        # suffix never looks.
+        def public(host, port=None, *a, **kw):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                     ("8.8.8.8", 0))]
+
+        with mock.patch("docketry.llm.socket.getaddrinfo", public):
+            with self.assertRaises(RemoteEndpointRefused):
+                resolve("http://models.local:11434")
+            with self.assertRaises(RemoteEndpointRefused):
+                resolve("http://localhost:11434")
+
+    def test_the_vetted_address_is_the_one_dialled(self):
+        # The host here never resolves. If propose() looked the name up again
+        # instead of using the address vet() approved, this could not connect
+        # at all — which is the point: one lookup, checked, then used.
+        srv = HTTPServer(("127.0.0.1", 0), _Handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            port = srv.server_port
+            loopback = [(socket.AF_INET, socket.SOCK_STREAM, 6, "",
+                         ("127.0.0.1", port))]
+            with mock.patch("docketry.llm.socket.getaddrinfo",
+                            lambda *a, **kw: loopback):
+                ep = vet(f"http://model.invalid:{port}")
+                self.assertEqual(ep.ip, "127.0.0.1")
+            # Resolution is no longer patched; a second lookup would fail.
+            with self.assertRaises(socket.gaierror):
+                socket.getaddrinfo("model.invalid", port)
+            with mock.patch("docketry.llm.vet", return_value=ep):
+                p = propose(LLMConfig(base_url=ep.url, model="m"), "classify")
+            self.assertTrue(p.text.startswith("ready:"))
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
+class _Redirector(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def do_POST(self):
+        self.send_response(302)
+        self.send_header("Location", "https://api.openai.com/v1/chat/completions")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+class TestRedirectsAreNotFollowed(unittest.TestCase):
+    """A private endpoint that answers 3xx is a way off the network."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = HTTPServer(("127.0.0.1", 0), _Redirector)
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.url = f"http://127.0.0.1:{cls.srv.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def test_a_redirect_off_the_lan_is_refused_not_followed(self):
+        with self.assertRaises(RemoteEndpointRefused) as ctx:
+            propose(LLMConfig(base_url=self.url, model="m"), "privileged text")
+        msg = str(ctx.exception)
+        self.assertIn("redirect", msg)
+        self.assertIn("api.openai.com", msg)
+
+    def test_probe_reports_it_rather_than_calling_it_ready(self):
+        self.assertIn("REFUSED", probe(LLMConfig(base_url=self.url, model="m")))
 
 
 class TestNoModelInsideAGate(unittest.TestCase):

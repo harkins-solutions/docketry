@@ -48,12 +48,18 @@ Best practices here are **code, not suggestions**:
 ## Data at rest
 
 Docketry stores messages and attachments in plaintext SQLite and files in
-its home directory, protected by file permissions (config is written 0600).
-It does NOT do application-level encryption, deliberately: an encrypted
-database whose key sits on the same disk is comfort, not protection. Protect
-a Docketry home the way you protect the rest of the client file system —
-OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
+its home directory, protected by file permissions (config.toml is *created*
+0600 — not written and then tightened, so a stored password is never briefly
+world-readable). It does NOT do application-level encryption, deliberately: an
+encrypted database whose key sits on the same disk is comfort, not protection.
+Protect a Docketry home the way you protect the rest of the client file system
+— OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
 Nothing is ever copied off the machine.
+
+On Windows that 0600 buys you nothing: `chmod` there moves the read-only bit
+and says nothing about who else may read the file, whose permissions come from
+the folder it sits in. On Windows, set `DOCKETRY_IMAP_PASSWORD` in the
+environment instead of storing the password — `docketry init` says so too.
 
 ## Bring your own model (optional, local only)
 

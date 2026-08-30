@@ -24,18 +24,17 @@ Off unless configured. Nothing calls it by default.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import ipaddress
 import json
 import re
 import socket
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 DEFAULT_TIMEOUT = 120.0
-LOCAL_HOSTNAMES = {"localhost", "ip6-localhost"}
+DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 class LLMError(RuntimeError):
@@ -74,46 +73,118 @@ class Proposal:
                 " finding, and not approved by anyone")
 
 
-def _is_private(host: str) -> bool:
-    """True when every address the host resolves to is loopback or private.
+@dataclass(frozen=True)
+class Endpoint:
+    """A vetted endpoint — and the address that was vetted.
 
-    Resolution matters: a hostname that looks internal can point anywhere, and
-    the check has to be about where the packets actually go. If ANY resolved
-    address is public the endpoint is refused — a name that resolves to both
-    is not a local model, it is a local model plus a way out.
+    The address travels with it because checking one and connecting to another
+    is not a check. Between the lookup and the socket a name is free to answer
+    differently, so what was approved is what gets dialled.
     """
-    if host.lower() in LOCAL_HOSTNAMES or host.lower().endswith(".local"):
-        return True
+    url: str
+    scheme: str
+    host: str
+    port: int
+    ip: str
+
+
+def _addresses(host: str) -> list[str]:
+    """Every address a host resolves to, in the order the resolver gave them.
+
+    No name is trusted on its face — not `.local`, not `localhost`. A name
+    that looks internal is still just a name, and any DNS server is free to
+    answer it with a public address.
+    """
     try:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror as e:
         raise LLMError(f"cannot resolve {host!r}: {e}") from None
-    addrs = {i[4][0] for i in infos}
+    addrs: list[str] = []
+    for info in infos:
+        a = info[4][0].split("%")[0]
+        if a not in addrs:
+            addrs.append(a)
     if not addrs:
         raise LLMError(f"cannot resolve {host!r}")
-    for a in addrs:
-        ip = ipaddress.ip_address(a.split("%")[0])
-        if not (ip.is_loopback or ip.is_private or ip.is_link_local):
-            return False
-    return True
+    return addrs
 
 
-def resolve(base_url: str) -> str:
+def vet(base_url: str) -> Endpoint:
     """Validate an endpoint, or refuse it. Called before any request is built."""
     parsed = urlparse(base_url)
-    if parsed.scheme not in ("http", "https"):
+    if parsed.scheme not in DEFAULT_PORTS:
         raise LLMError(f"model endpoint must be http or https, got {base_url!r}")
     if not parsed.hostname:
         raise LLMError(f"model endpoint has no host: {base_url!r}")
-    if not _is_private(parsed.hostname):
+    # EVERY address has to be local. A name that resolves to both a private
+    # and a public address is not a local model, it is a local model plus a
+    # way out.
+    addrs = _addresses(parsed.hostname)
+    for a in addrs:
+        ip = ipaddress.ip_address(a)
+        if not (ip.is_loopback or ip.is_private or ip.is_link_local):
+            raise RemoteEndpointRefused(
+                f"{parsed.hostname} is not on your network ({a}). Docketry runs"
+                " models locally only: nothing it reads is sent to a third"
+                " party, and a public endpoint would break that. Point base_url"
+                " at a model on this machine or your own LAN (Ollama,"
+                " llama.cpp, vLLM and LM Studio all serve an OpenAI-compatible"
+                " API)."
+            )
+    return Endpoint(
+        url=base_url.rstrip("/"),
+        scheme=parsed.scheme,
+        host=parsed.hostname,
+        port=parsed.port or DEFAULT_PORTS[parsed.scheme],
+        ip=addrs[0],
+    )
+
+
+def resolve(base_url: str) -> str:
+    """The vetted endpoint as a string, for callers that only want the URL."""
+    return vet(base_url).url
+
+
+def _post(ep: Endpoint, path: str, body: bytes, timeout: float) -> bytes:
+    """POST to the address that was vetted, and follow nothing.
+
+    Two properties this buys that a plain urlopen does not. The connection
+    goes to `ep.ip`, so the address checked is the address dialled rather than
+    whatever a second lookup returns. And a 3xx is refused instead of
+    followed: a compliant private endpoint that answers with a redirect is a
+    way off the network, which is the one thing this module exists to prevent.
+    """
+    cls = (http.client.HTTPSConnection if ep.scheme == "https"
+           else http.client.HTTPConnection)
+    conn = cls(ep.host, ep.port, timeout=timeout)
+    # Keep host for SNI and the Host header; dial the vetted address.
+    dial = conn._create_connection
+    conn._create_connection = (
+        lambda address, t=None, src=None: dial((ep.ip, address[1]), t, src))
+    try:
+        conn.request("POST", path, body=body,
+                     headers={"Content-Type": "application/json",
+                              "User-Agent": "docketry (local model)"})
+        resp = conn.getresponse()
+        status, reason = resp.status, resp.reason
+        location = resp.getheader("Location", "")
+        payload = resp.read()
+    except (OSError, http.client.HTTPException) as e:
+        raise LLMError(
+            f"cannot reach the local model at {ep.url}: {e}. Is it running?"
+        ) from None
+    finally:
+        conn.close()
+    if 300 <= status < 400:
         raise RemoteEndpointRefused(
-            f"{parsed.hostname} is not on your network. Docketry runs models"
-            " locally only: nothing it reads is sent to a third party, and a"
-            " public endpoint would break that. Point base_url at a model on"
-            " this machine or your own LAN (Ollama, llama.cpp, vLLM and LM"
-            " Studio all serve an OpenAI-compatible API)."
+            f"the model at {ep.url} answered {status} redirecting to"
+            f" {location or 'elsewhere'}. Docketry does not follow redirects"
+            " from a model endpoint: the address it vetted is the only one it"
+            " will talk to, and a redirect is a way off your network."
         )
-    return base_url.rstrip("/")
+    if status >= 400:
+        raise LLMError(f"local model returned {status}: {reason}")
+    return payload
 
 
 def propose(cfg: LLMConfig, prompt: str, *, system: str | None = None) -> Proposal:
@@ -123,28 +194,16 @@ def propose(cfg: LLMConfig, prompt: str, *, system: str | None = None) -> Propos
     running already implements, so "bring your own model" needs one code path
     rather than one per vendor.
     """
-    endpoint = resolve(cfg.base_url)
+    ep = vet(cfg.base_url)
+    endpoint = ep.url
     messages = ([{"role": "system", "content": system}] if system else [])
     messages.append({"role": "user", "content": prompt})
     body = json.dumps({"model": cfg.model, "messages": messages,
                        "stream": False}).encode()
-    req = urllib.request.Request(
-        f"{endpoint}/v1/chat/completions", data=body,
-        headers={"Content-Type": "application/json",
-                 "User-Agent": "docketry (local model)"},
-        method="POST",
-    )
+    raw = _post(ep, _path(ep) + "/v1/chat/completions", body, cfg.timeout)
     try:
-        with urllib.request.urlopen(req, timeout=cfg.timeout) as resp:
-            payload = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        raise LLMError(f"local model returned {e.code}: {e.reason}") from None
-    except urllib.error.URLError as e:
-        raise LLMError(
-            f"cannot reach the local model at {endpoint}: {e.reason}."
-            " Is it running?"
-        ) from None
-    except json.JSONDecodeError:
+        payload = json.loads(raw.decode())
+    except (UnicodeDecodeError, json.JSONDecodeError):
         raise LLMError(f"local model at {endpoint} returned a non-JSON body") from None
 
     try:
@@ -176,6 +235,11 @@ def propose(cfg: LLMConfig, prompt: str, *, system: str | None = None) -> Propos
         prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
         created_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
     )
+
+
+def _path(ep: Endpoint) -> str:
+    """Any path prefix the firm put in base_url (e.g. /openai on LM Studio)."""
+    return urlparse(ep.url).path.rstrip("/")
 
 
 _THINK = re.compile(r"<(think|thinking|reasoning)>(.*?)</\1>", re.S | re.I)

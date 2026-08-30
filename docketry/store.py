@@ -6,6 +6,7 @@ every gate finding and human approval lands in an audit table.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from datetime import datetime, timezone
@@ -106,6 +107,10 @@ OK = "ok"
 PENDING_REVIEW = "pending_review"
 BLOCKED = "blocked"
 DONE = "done"
+
+
+class StoreIntegrityError(RuntimeError):
+    """Stored bytes are missing or no longer match what ingest recorded."""
 
 
 def utcnow() -> str:
@@ -296,6 +301,33 @@ class Store:
         return self.db.execute(
             "SELECT * FROM attachments WHERE message_id=? ORDER BY id", (msg_id,)
         ).fetchall()
+
+    def attachment_bytes(self, msg_id: int) -> dict[str, bytes]:
+        """The stored bytes of one message's attachments, keyed by digest.
+
+        A missing or altered blob raises rather than returning nothing. The
+        bytes are content-addressed, so the digest that names the file is also
+        the check on it — and a gate handed zero bytes, or different ones,
+        would report a clean result on a document nobody has read.
+        """
+        out: dict[str, bytes] = {}
+        for row in self.attachments_for(msg_id):
+            path = Path(row["path"])
+            if not path.exists():
+                raise StoreIntegrityError(
+                    f"attachment {row['filename']!r} of message {msg_id} is"
+                    f" recorded at {path}, which no longer exists — the store"
+                    " has lost bytes its gates may need to re-read"
+                )
+            data = path.read_bytes()
+            digest = hashlib.sha256(data).hexdigest()
+            if digest != row["sha256"]:
+                raise StoreIntegrityError(
+                    f"attachment {row['filename']!r} of message {msg_id} no"
+                    f" longer matches the digest recorded at ingest ({path})"
+                )
+            out[row["sha256"]] = data
+        return out
 
     # -- stats: queue health, not people scores --------------------------
     def stats(self, days: int = 7) -> dict:

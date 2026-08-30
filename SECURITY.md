@@ -45,7 +45,9 @@ these are deliberate and documented:
 - **It does not encrypt at rest.** Messages and attachments sit in plaintext
   SQLite and files, protected by file permissions. An encrypted database whose
   key is on the same disk is comfort, not protection; full-disk encryption is
-  the control, and the README says so.
+  the control, and the README says so. `config.toml` is created 0600 on POSIX;
+  on Windows file permissions are inherited from the folder, so a password
+  belongs in `DOCKETRY_IMAP_PASSWORD` rather than in the file.
 - **It has no login.** The review UI binds to 127.0.0.1 only and refuses any
   other interface. Roles say what a hold is waiting for and are recorded
   against a name; they are an attestation, not authentication. A report that
