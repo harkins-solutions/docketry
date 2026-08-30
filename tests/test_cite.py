@@ -1,9 +1,9 @@
 import unittest
 
-from docketry.cite import (
+from docketry.tools.cite import (
     CiteError, Lookup, name_matches, quotes_near, star_pages, verify,
 )
-from docketry.cite import citation_inventory  # noqa: F401
+from docketry.tools.cite import citation_inventory  # noqa: F401
 
 try:
     import eyecite  # noqa: F401

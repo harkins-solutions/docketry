@@ -2,9 +2,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.envelope import Envelope
-from docketry.gates.notice import NoticeParser
-from docketry.notices import (
+from docketry.core.envelope import Envelope
+from docketry.tools.gates_notice import NoticeParser
+from docketry.tools.notices import (
     AdapterError, builtin_adapters, load_adapters_file, parse, stack,
 )
 

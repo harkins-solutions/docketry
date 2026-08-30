@@ -45,12 +45,23 @@ these are deliberate and documented:
 - **It does not encrypt at rest.** Messages and attachments sit in plaintext
   SQLite and files, protected by file permissions. An encrypted database whose
   key is on the same disk is comfort, not protection; full-disk encryption is
-  the control, and the README says so.
+  the control, and the README says so. `config.toml` is created 0600 on POSIX;
+  on Windows file permissions are inherited from the folder, so a password
+  belongs in `DOCKETRY_IMAP_PASSWORD` rather than in the file.
 - **It has no login.** The review UI binds to 127.0.0.1 only and refuses any
   other interface. Roles say what a hold is waiting for and are recorded
   against a name; they are an attestation, not authentication. A report that
   "anyone can claim any role" is describing the design, though a report that
   the UI can be reached from another machine is a real finding and we want it.
+- **The approval chain detects edits; it does not prevent them.** Approvals are
+  hash-chained, and an edit, deletion or reordering stops the chain verifying.
+  Anyone who can write to the database can also recompute every digest after
+  the row they changed — that is a documented limit, not a vulnerability, and
+  `docketry anchor` exists because the fix is a copy of the head kept off the
+  machine. A report that the chain can be recomputed in place is describing
+  the design. A report that `chain_report()` misses an edit it should catch,
+  or that `anchor` prints a head over a chain that does not verify, is a real
+  finding and we want it.
 - **It is local.** Docketry does not send your documents anywhere. A configured
   model must resolve to your own network or the request is refused before it is
   built. If you find a path that sends data off the machine without the

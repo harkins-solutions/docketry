@@ -3,12 +3,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.contacts import (
+from docketry.tools.contacts import (
     ContactError,
     load_contacts,
     load_if_present,
 )
-from docketry.roles import load_roles
+from docketry.core.roles import load_roles
 
 EXAMPLE = Path("examples/contacts.toml")
 ROLES = Path("examples/roles.toml")
@@ -55,7 +55,7 @@ class TestTheTwoAxesStayApart(unittest.TestCase):
         self.assertIn("only a staff contact holds roles", str(ctx.exception))
 
     def test_a_staff_role_must_be_one_the_firm_declared(self):
-        from docketry.roles import RoleError
+        from docketry.core.roles import RoleError
         with self.assertRaises(RoleError):
             load_contacts(_file('[[contact]]\nemail="a@b.com"\nkind="staff"\n'
                                 'roles=["wizard"]\n'), load_roles(ROLES))

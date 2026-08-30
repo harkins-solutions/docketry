@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.roles import RoleError, load_if_present, load_roles
+from docketry.core.roles import RoleError, load_if_present, load_roles
 
 EXAMPLE = Path("examples/roles.toml")
 
@@ -82,14 +82,14 @@ class TestShippedExamplesAgree(unittest.TestCase):
     """Copying the shipped roles file in must not break the shipped manifests."""
 
     def test_every_example_manifest_loads_against_the_example_roles(self):
-        from docketry.manifest import load_manifest
+        from docketry.core.manifest import load_manifest
         reg = load_roles(EXAMPLE)
         for m in sorted(Path("examples").glob("guardrails*.toml")):
             load_manifest(m, reg)      # raises if a role is undeclared
 
     def test_the_built_in_default_manifest_loads_too(self):
         import tempfile as tf
-        from docketry.manifest import DEFAULT_MANIFEST, load_manifest
+        from docketry.core.manifest import DEFAULT_MANIFEST, load_manifest
         p = Path(tf.mkdtemp()) / "guardrails.toml"
         p.write_text(DEFAULT_MANIFEST)
         load_manifest(p, load_roles(EXAMPLE))
@@ -97,7 +97,7 @@ class TestShippedExamplesAgree(unittest.TestCase):
 
 class TestConfigValidation(unittest.TestCase):
     def test_a_gate_naming_an_undeclared_role_is_refused_at_load(self):
-        from docketry.manifest import ManifestError, build_pipeline
+        from docketry.core.manifest import ManifestError, build_pipeline
         reg = load_roles(EXAMPLE)
         data = {"pipeline": {"stages": ["ingest"]},
                 "gate": [{"id": "provenance-stamp", "binds_to": ["ingest"],
@@ -107,7 +107,7 @@ class TestConfigValidation(unittest.TestCase):
         self.assertIn("wizard", str(ctx.exception))
 
     def test_a_workflow_naming_an_undeclared_role_is_refused_at_load(self):
-        from docketry.workflow import load_workflow
+        from docketry.tools.workflow import load_workflow
         reg = load_roles(EXAMPLE)
         wf = _roles('[workflow]\nmatter_type="x"\nstages=["a","b"]\n'
                     '[[transition]]\nfrom="a"\nto="b"\nauthority="wizard"\n')
@@ -115,7 +115,7 @@ class TestConfigValidation(unittest.TestCase):
             load_workflow(wf, reg)
 
     def test_without_a_registry_nothing_is_validated(self):
-        from docketry.workflow import load_workflow
+        from docketry.tools.workflow import load_workflow
         wf = _roles('[workflow]\nmatter_type="x"\nstages=["a","b"]\n'
                     '[[transition]]\nfrom="a"\nto="b"\nauthority="wizard"\n')
         self.assertEqual(load_workflow(wf).transitions[0].authority, "wizard")

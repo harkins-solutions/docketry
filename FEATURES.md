@@ -10,6 +10,14 @@ Scope rules that bind every feature: local-first (nothing hosted by us), no
 cybersecurity claims, no currency claims (nothing that promises rules or law
 are up to date), Apache-2.0.
 
+Where the code lives follows the graph. F0 and F1 — the port and the gate
+runner — are `docketry/core/`, which imports nothing above itself. Every
+other feature here is a module in `docketry/tools/`, removable without
+touching the port; the ones marked *(gate)* register with the port's gate
+registry the same way a third-party gate would. `tests/test_boundaries.py`
+enforces the direction, so a feature that grows a dependency the wrong way
+fails the build rather than quietly making this document wrong.
+
 ## Graph
 
 ```mermaid
@@ -34,13 +42,21 @@ graph TD
 ### F0 — Email port (base) — SHIPPED v0.1
 Drains a dedicated intake mailbox over IMAP (read-only, UID cursor),
 normalizes each message to a provenance-stamped envelope, stores everything
-in SQLite on local disk.
+in SQLite on local disk. Lives in `docketry/core/`, which imports nothing
+above itself. Since v0.16, `docketry init` asks for what it needs and writes
+config.toml, guardrails.toml and roles.toml from the answers, so no firm has
+to author TOML to install this.
 - Internal: none.
 - External: none (stdlib).
 
 ### F1 — Gate runner + guardrail manifest — SHIPPED v0.1
 Stages, gates, block/bounce/warn, role-scoped approvals, audit trail,
-load-time validation incl. allowed-stages scoping.
+load-time validation incl. allowed-stages scoping. Since v0.16 the approval
+log is hash-chained — each row digests its own content and the row before it,
+so an edit, deletion or reordering stops verifying — and `docketry anchor`
+prints the head to keep off the machine, which is the half that makes the
+chain worth anything. The chain detects tampering; it does not prevent it,
+and the README says so in those words.
 - Internal: F0 (envelope, store).
 - External: none (stdlib `tomllib`).
 
@@ -134,8 +150,6 @@ would still cost the page its text layer.
   Tesseract binary, `pytesseract` and `Pillow`. The overlay is hand-built
   rather than pulling in a PDF drawing library.
 
-<<<<<<< Updated upstream
-=======
 ### F12 — Case timeline + docket reconciliation — SHIPPED v0.10
 Weaves the notices, receipts and correspondence for one case into a single
 chronology, in four layers that never merge: record (served/filed/court
@@ -155,7 +169,6 @@ disclaimer on their own face.
 - External: `openpyxl` and `python-docx` (extra `export`); the core weave and
   the reconciliation are stdlib.
 
->>>>>>> Stashed changes
 ### F13 — Bring your own model (local only) — SHIPPED v0.11
 An optional `[llm]` block pointing at a model the firm runs itself. The
 endpoint is validated before any request is built and refused unless it
@@ -272,11 +285,7 @@ outgrow forwarding; bring-your-own OAuth app, per-mailbox scoping.
 ## Build order
 
 F0/F1 (shipped) -> F3 (no new deps, immediately useful) -> F2 -> F5 -> F6 ->
-<<<<<<< Updated upstream
-F4 -> F9 -> F8 -> F11 -> F7 -> F10.
-=======
 F4 -> F9 -> F8 -> F11 -> F12 -> F13 -> F14 -> F15 -> F16 -> F7 -> F10.
->>>>>>> Stashed changes
 
 F3 before F2 because it needs nothing but the envelope and proves the
 gate-plugin story end to end; F5 before F6 because the linter borrows the

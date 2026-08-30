@@ -20,19 +20,19 @@ import tomllib
 from pathlib import Path
 
 from . import __version__
-from . import store as st
-from .config import MANIFEST_NAME, load_home, write_config
-from .envelope import parse_message
-from .mailbox import IntakeMailbox
-from .manifest import DEFAULT_MANIFEST, load_manifest
-from . import notices as notices_mod
-from .pipeline import GateRefusal, Runner
-from .store import Store
+from .core import store as st
+from .core.config import MANIFEST_NAME, load_home, write_config
+from .core.envelope import parse_message
+from .core.mailbox import IntakeMailbox
+from .core.manifest import DEFAULT_MANIFEST, load_manifest
+from .tools import notices as notices_mod
+from .core.pipeline import GateRefusal, Runner
+from .core.store import Store
 
 
 def _registry(home):
     """The firm's role registry, when it has written one."""
-    from .roles import RoleError, load_if_present
+    from .core.roles import RoleError, load_if_present
     try:
         return load_if_present(home)
     except RoleError as e:
@@ -41,7 +41,7 @@ def _registry(home):
 
 def _directory(home, registry=None):
     """The firm's contacts directory, when it has written one."""
-    from .contacts import ContactError, load_if_present
+    from .tools.contacts import ContactError, load_if_present
     try:
         return load_if_present(home, registry)
     except ContactError as e:
@@ -63,7 +63,24 @@ def _open(home: str):
 
 
 def cmd_init(args) -> None:
+    """Set up a home — by asking, unless flags already said everything.
+
+    The wizard is the default because the person doing this at a small firm is
+    not the person who wants to author three TOML files. Passing --host and
+    --user keeps the old one-shot path, so scripts and CI are unaffected.
+    """
+    from . import wizard
     home = Path(args.home)
+    flags_complete = bool(args.host and args.user)
+    if args.wizard or (not flags_complete and not args.no_wizard
+                       and wizard.available()):
+        wizard.run(home)
+        return
+    if not flags_complete and not wizard.available():
+        sys.exit("nothing to read answers from: pass --host and --user"
+                 " (and --store-password if the password goes in the file),"
+                 " or run `docketry init` where someone can answer.")
+
     host = args.host or input("IMAP host of the intake mailbox (e.g. imap.gmail.com): ").strip()
     user = args.user or input("Intake mailbox address (e.g. intake@yourfirm.com): ").strip()
     folder = args.folder or "INBOX"
@@ -80,6 +97,11 @@ def cmd_init(args) -> None:
     print(f"  manifest:  {manifest}")
     if not password:
         print("  password:  set DOCKETRY_IMAP_PASSWORD in the environment")
+    elif _os.name == "nt":
+        # Do not let "stored 0600" imply a protection Windows does not give.
+        print("  password:  stored in config.toml — on Windows that file's"
+              " permissions come from the folder it sits in, not from 0600."
+              " Set DOCKETRY_IMAP_PASSWORD instead if others use this machine.")
     print("next: point a forwarding rule at the intake mailbox, then run: docketry poll")
 
 
@@ -89,7 +111,7 @@ def cmd_poll(args) -> None:
         sys.exit("no [mailbox] configured — run: docketry init")
     if not cfg.mailbox.password:
         sys.exit("no mailbox password (set DOCKETRY_IMAP_PASSWORD)")
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     first_stage = pipeline.stages[0]
     adapters_file = cfg.home / "adapters.toml"
     adapter_stack = notices_mod.stack(adapters_file if adapters_file.exists() else None)
@@ -108,7 +130,7 @@ def cmd_poll(args) -> None:
             if msg_id is None:
                 continue
             ingested += 1
-            from .classify import classify as _classify
+            from .tools.classify import classify as _classify
             for att in store.attachments_for(msg_id):
                 label, tier = _classify(att["filename"])
                 if tier != "low":
@@ -157,14 +179,16 @@ def cmd_approve(args) -> None:
     if binding is None:
         sys.exit(f"gate '{args.gate}' is not bound at stage '{row['stage']}'"
                  f" (bound here: {', '.join(sorted(stage_bindings)) or 'none'})")
-    if args.role != binding.authority:
-        sys.exit(f"gate '{args.gate}' at stage '{row['stage']}' requires role"
-                 f" '{binding.authority}', not '{args.role}' — approval not recorded")
+    from .core.roles import refuse_approval
+    refusal = refuse_approval(cfg.registry, person=args.by, role=args.role,
+                              gate_id=args.gate, required=binding.authority)
+    if refusal:
+        sys.exit(f"at stage '{row['stage']}': {refusal} — approval not recorded")
     store.add_approval(
         args.message, row["stage"], args.gate,
         approved_by=args.by, role=args.role, note=args.note or "",
     )
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     try:
         status = runner.advance(args.message)
         print(f"approved; message {args.message} -> {status}")
@@ -173,8 +197,8 @@ def cmd_approve(args) -> None:
 
 
 def cmd_advance(args) -> None:
-    _, pipeline, store = _open(args.home)
-    runner = Runner(pipeline, store, registry=_registry(args.home))
+    cfg, pipeline, store = _open(args.home)
+    runner = Runner(pipeline, store, registry=cfg.registry)
     try:
         status = runner.advance(args.message)
         print(f"message {args.message} -> {status}")
@@ -205,7 +229,7 @@ def cmd_notices(args) -> None:
 
 def _parse_box(spec: str):
     """page:x0,y0,x1,y1 — fractions of the page, top-left origin."""
-    from .redact import Box, RedactionError
+    from .tools.redact import Box, RedactionError
     try:
         page, rest = spec.split(":", 1)
         x0, y0, x1, y1 = (float(v) for v in rest.split(","))
@@ -218,7 +242,7 @@ def _parse_box(spec: str):
 
 def cmd_redact_scan(args) -> None:
     """PREVIEW only. Writes nothing."""
-    from .redact import RedactionError, find_terms
+    from .tools.redact import RedactionError, find_terms
     try:
         hits = find_terms(args.file, args.term)
     except RedactionError as e:
@@ -236,7 +260,7 @@ def cmd_redact_scan(args) -> None:
 
 
 def cmd_redact_apply(args) -> None:
-    from .redact import RedactionError, apply, find_terms
+    from .tools.redact import RedactionError, apply, find_terms
     boxes = []
     try:
         if args.term:
@@ -287,7 +311,7 @@ def cmd_redact_apply(args) -> None:
 
 
 def cmd_redact_verify(args) -> None:
-    from .redact import verify
+    from .tools.redact import verify
     survivors = verify(args.file, args.term)
     if survivors:
         print(_sev("FAIL") + "  still extractable: " + ", ".join(survivors))
@@ -297,14 +321,14 @@ def cmd_redact_verify(args) -> None:
 
 
 def _timeline(args):
-    from .timeline import build
+    from .tools.timeline import build
     cfg, _, store = _open(args.home)
     return build(store, args.case, threads=args.thread or None,
                  directory=cfg.directory)
 
 
 def cmd_timeline(args) -> None:
-    from .timeline import LAYERS
+    from .tools.timeline import LAYERS
     tl = _timeline(args)
     layers = tuple(args.layer) if args.layer else LAYERS
     rows = tl.sorted_entries(layers, thread=args.in_thread)
@@ -326,8 +350,8 @@ def cmd_timeline(args) -> None:
 
 
 def cmd_timeline_export(args) -> None:
-    from .export import to_docx, to_xlsx
-    from .timeline import LAYERS
+    from .tools.export import to_docx, to_xlsx
+    from .tools.timeline import LAYERS
     tl = _timeline(args)
     layers = tuple(args.layer) if args.layer else LAYERS
     out = Path(args.out)
@@ -342,7 +366,7 @@ def cmd_timeline_export(args) -> None:
 
 
 def cmd_docket_reconcile(args) -> None:
-    from .reconcile import parse_docket, reconcile
+    from .tools.reconcile import parse_docket, reconcile
     tl = _timeline(args)
     text = Path(args.docket).read_text(errors="replace")
     lines = parse_docket(text)
@@ -373,7 +397,7 @@ def cmd_docket_reconcile(args) -> None:
 
 def cmd_llm_check(args) -> None:
     """Is a local model configured, reachable, and actually local?"""
-    from .llm import probe
+    from .tools.llm import probe
     cfg, _, _ = _open(args.home)
     if cfg.llm is None:
         print("no model configured — Docketry works fully without one")
@@ -394,12 +418,12 @@ def cmd_llm_check(args) -> None:
 
 
 def _article(word):
-    from .workflow import article
+    from .tools.workflow import article
     return article(word)
 
 
 def _matter_or_exit(store, case):
-    from .timeline import normalise_case_number
+    from .tools.timeline import normalise_case_number
     row = store.get_matter(normalise_case_number(case))
     if row is None:
         sys.exit(f"no matter for {case} — open it with: docketry matter-open {case}")
@@ -420,8 +444,8 @@ def cmd_matters(args) -> None:
 
 
 def cmd_matter_open(args) -> None:
-    from .timeline import normalise_case_number
-    from .workflow import WorkflowError, workflow_for
+    from .tools.timeline import normalise_case_number
+    from .tools.workflow import WorkflowError, workflow_for
     cfg, _, store = _open(args.home)
     try:
         wf = workflow_for(cfg.home, args.type, cfg.registry)
@@ -435,7 +459,7 @@ def cmd_matter_open(args) -> None:
 
 
 def cmd_matter_status(args) -> None:
-    from .workflow import WorkflowError, available, facts_from_store, workflow_for
+    from .tools.workflow import WorkflowError, available, facts_from_store, workflow_for
     cfg, _, store = _open(args.home)
     row = _matter_or_exit(store, args.case)
     try:
@@ -463,7 +487,7 @@ def cmd_matter_status(args) -> None:
 
 
 def cmd_matter_advance(args) -> None:
-    from .workflow import WorkflowError, check, facts_from_store, workflow_for
+    from .tools.workflow import WorkflowError, check, facts_from_store, workflow_for
     cfg, _, store = _open(args.home)
     row = _matter_or_exit(store, args.case)
     try:
@@ -491,7 +515,7 @@ def cmd_matter_advance(args) -> None:
 
 def cmd_workflow_check(args) -> None:
     """The sandbox: run a workflow and watch where it holds."""
-    from .workflow import MatterFacts, WorkflowError, load_workflow, simulate
+    from .tools.workflow import MatterFacts, WorkflowError, load_workflow, simulate
     try:
         wf = load_workflow(args.file)
     except WorkflowError as e:
@@ -546,7 +570,7 @@ def cmd_roles(args) -> None:
 
 def cmd_report(args) -> None:
     """Pipeline health. Counted by role and by gate, never by person."""
-    from .report import build
+    from .tools.report import build
     cfg, pipeline, store = _open(args.home)
     rep = build(store, pipeline, days=args.days,
                 firm_domains=cfg.firm_domains, directory=cfg.directory)
@@ -618,7 +642,7 @@ def cmd_report(args) -> None:
 
 
 def cmd_contacts(args) -> None:
-    from .contacts import KINDS
+    from .tools.contacts import KINDS
     cfg, _, _ = _open(args.home)
     d = cfg.directory
     if d is None:
@@ -639,8 +663,8 @@ def cmd_contacts(args) -> None:
 
 
 def cmd_verify_draft(args) -> None:
-    from .cite import CiteError, verify, extract_citations
-    from .extract import ExtractionError, extract_path
+    from .tools.cite import CiteError, verify, extract_citations
+    from .tools.extract import ExtractionError, extract_path
 
     try:
         text = extract_path(args.file).full_text
@@ -649,7 +673,7 @@ def cmd_verify_draft(args) -> None:
     try:
         if args.offline:
             raise CiteError("offline requested")
-        from .cite_client import CourtListenerClient
+        from .tools.cite_client import CourtListenerClient
         client = CourtListenerClient(token=args.token)
         report = verify(text, client)
         client.close()
@@ -657,7 +681,7 @@ def cmd_verify_draft(args) -> None:
         if not args.offline:
             print(f"network verification unavailable ({e}); extraction-only mode")
         try:
-            from .cite import citation_inventory
+            from .tools.cite import citation_inventory
             cites, n_short = citation_inventory(text)
         except CiteError as e2:
             sys.exit(str(e2))
@@ -682,8 +706,8 @@ def cmd_verify_draft(args) -> None:
 
 
 def cmd_lint(args) -> None:
-    from .extract import ExtractionError, extract_path
-    from .lint import RulepackError, lint, load_rulepack
+    from .tools.extract import ExtractionError, extract_path
+    from .tools.lint import RulepackError, lint, load_rulepack
 
     try:
         text = extract_path(args.file).full_text
@@ -708,8 +732,8 @@ def cmd_lint(args) -> None:
 
 
 def cmd_classify(args) -> None:
-    from .classify import classify
-    from .extract import ExtractionError, extract_path
+    from .tools.classify import classify
+    from .tools.extract import ExtractionError, extract_path
 
     path = Path(args.file)
     text, degraded = "", ""
@@ -764,7 +788,7 @@ def cmd_ui(args) -> None:
     store.close()
     server = make_server(cfg.store_path, pipeline, port=args.port,
                          home=cfg.home, firm_domains=cfg.firm_domains,
-                         directory=cfg.directory)
+                         directory=cfg.directory, registry=cfg.registry)
     print(f"Docketry review UI: http://127.0.0.1:{args.port}/  (Ctrl-C to stop)")
     try:
         server.serve_forever()
@@ -791,8 +815,8 @@ def cmd_watch(args) -> None:
 
 def cmd_doctor(args) -> None:
     import shutil
-    from .config import load_home
-    from .manifest import ManifestError, load_manifest as _lm
+    from .core.config import load_home
+    from .core.manifest import ManifestError, load_manifest as _lm
 
     ok = True
 
@@ -825,7 +849,7 @@ def cmd_doctor(args) -> None:
         report("FAIL", f"no {cfg.manifest_path.name} — run: docketry init")
     adapters = home / "adapters.toml"
     if adapters.exists():
-        from .notices import AdapterError, load_adapters_file
+        from .tools.notices import AdapterError, load_adapters_file
         try:
             n = len(load_adapters_file(adapters))
             report("PASS", f"firm adapters: {n} loaded")
@@ -858,8 +882,19 @@ def cmd_doctor(args) -> None:
         report("PASS", f"roles declared: {', '.join(reg.names())}")
     else:
         report("WARN", "no roles.toml — authority values are not checked")
+    if cfg.store_path.exists():
+        chain = Store(cfg.store_path)
+        try:
+            chain_report = chain.chain_report()
+        finally:
+            chain.close()
+        if not chain_report.ok:
+            report("FAIL", chain_report.summary + " — the approval log has been"
+                           " edited since it was written")
+        elif chain_report.total:
+            report("PASS", chain_report.summary)
     if cfg.llm is not None:
-        from .llm import probe
+        from .tools.llm import probe
         result = probe(cfg.llm)
         if result.startswith("REFUSED"):
             report("FAIL", f"model endpoint is NOT local — {result}")
@@ -918,7 +953,48 @@ def cmd_digest(args) -> None:
     if s["template_drift_messages"]:
         lines.append(f"  NOTE: {s['template_drift_messages']} template-drift event(s)"
                      " — check portal formats")
+    chain = store.chain_report()
+    if not chain.ok:
+        lines.append(f"  ALERT: {chain.summary}")
+    elif chain.chained:
+        # The daily paste is the cheapest anchor there is: once this line is
+        # in a mailbox the firm does not administer, the log cannot be quietly
+        # rewritten to disagree with it.
+        lines.append(f"  approvals head: {chain.head} ({chain.chained} row(s))")
     print("\n".join(lines))
+
+
+def cmd_anchor(args) -> None:
+    """Print the head of the approval chain, to keep somewhere else.
+
+    This is the half that makes the chain worth anything. The digests live on
+    the same disk as the rows they cover, so anyone who can edit a row can
+    recompute every digest after it. A copy of the head that left the machine
+    cannot be recomputed — a rewritten log then contradicts something the firm
+    already sent, printed or filed, and that contradiction is the finding.
+    """
+    cfg, _, store = _open(args.home)
+    report = store.chain_report()
+    if not report.ok:
+        sys.exit(f"{report.summary} — refusing to anchor a log that no longer"
+                 " verifies. The rows from that point on were edited after"
+                 " they were written; the earlier ones still stand.")
+    stamp = st.utcnow()
+    line = (f"docketry-anchor {stamp} approvals={report.chained}"
+            f" head={report.head}")
+    path = Path(cfg.home) / "anchors.log"
+    with open(path, "a") as fh:
+        fh.write(line + "\n")
+    print(line)
+    if report.unchained:
+        print(f"note: {report.unchained} approval(s) predate the chain and are"
+              " not covered by this anchor")
+    print()
+    print("Keep this line somewhere you cannot edit: mail it to yourself, paste")
+    print("it into a case note, print it. Docketry never sends anything, so")
+    print("moving it off this machine is the one step that is yours.")
+    print(f"(Appended to {path} as well — but that file is on the same disk as")
+    print(" the log it describes, so on its own it proves nothing.)")
 
 
 def cmd_demo(args) -> None:
@@ -927,19 +1003,23 @@ def cmd_demo(args) -> None:
     import webbrowser
     from email.message import EmailMessage
 
-    from . import notices as nmod
-    from .classify import classify as _classify
-    from .envelope import parse_message
-    from .manifest import load_manifest
-    from .pipeline import Runner
-    from .store import Store
+    from .tools import notices as nmod
+    from .tools.classify import classify as _classify
+    from .core.envelope import parse_message
+    from .core.manifest import load_manifest
+    from .core.pipeline import Runner
+    from .core.store import Store
     from .webui import make_server
+
+    from .core.roles import load_roles
 
     home = Path(tempfile.mkdtemp(prefix="docketry-demo-"))
     (home / "guardrails.toml").write_text(DEMO_MANIFEST)
-    pipeline = load_manifest(home / "guardrails.toml")
+    (home / "roles.toml").write_text(DEMO_ROLES)
+    registry = load_roles(home / "roles.toml")
+    pipeline = load_manifest(home / "guardrails.toml", registry)
     store = Store(home / "store")
-    runner = Runner(pipeline, store)
+    runner = Runner(pipeline, store, registry=registry)
     adapter_stack = nmod.stack()
 
     def mail(from_addr, subject, body, attach=None):
@@ -970,6 +1050,9 @@ def cmd_demo(args) -> None:
              "a redesigned portal template this adapter has never seen\n"),
         mail("stranger@sketchy.example", "Invoice attached — pay today",
              "wire transfer please", attach="invoice.pdf"),
+        mail("reception@demofirm.example", "New matter — conflicts check",
+             "Walk-in this morning wants to sue Roberta Vance over the"
+             " Riverside build. Pulling the file now.\n"),
     ]
     for raw in samples:
         env = parse_message(raw, source="demo", fetched_at=st.utcnow())
@@ -987,12 +1070,21 @@ def cmd_demo(args) -> None:
             status = runner.advance(msg_id)
     store.close()
 
-    server = make_server(home / "store", pipeline, port=args.port)
+    server = make_server(home / "store", pipeline, port=args.port,
+                         registry=registry)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Demo home: {home} (disposable)")
-    print(f"Two messages passed clean; three are held — a drifted portal template,")
-    print(f"an unknown sender, and its attachment. Release them from the dashboard:")
-    print(f"  {url}   (Ctrl-C to stop)")
+    print("Three messages passed clean. Three stopped, and the two that matter")
+    print("are the reason a firm installs this:")
+    print("  - a conflicts email naming a screened party. BLOCKED by the ethical")
+    print("    wall. Only an attorney can release it, and the release is a row")
+    print("    with a name and a timestamp — which is what a grievance asks for.")
+    print("  - a court e-service notice whose portal changed its template. Held")
+    print("    rather than guessed at: a misread hearing date is a malpractice")
+    print("    claim, an unread one is a phone call.")
+    print("  - an unknown sender with an attachment. Routine hygiene, and the")
+    print("    least interesting thing here.")
+    print(f"Release them from the dashboard: {url}   (Ctrl-C to stop)")
     if not args.no_browser:
         webbrowser.open(url)
     try:
@@ -1001,9 +1093,40 @@ def cmd_demo(args) -> None:
         print("\ndemo stopped; nothing was saved outside", home)
 
 
+DEMO_ROLES = """\
+[[role]]
+name = "paralegal"
+description = "Clears routine intake holds."
+may_release = ["sender-scope", "attachment-policy", "notice-parser",
+               "provenance-stamp"]
+
+[[role]]
+name = "attorney"
+description = "Releases anything, including a conflict hold."
+may_release = ["*"]
+"""
+
 DEMO_MANIFEST = """\
 [pipeline]
 stages = ["ingest", "review"]
+
+# The ethical wall. Anything naming a screened party stops here, and only a
+# recorded release by an attorney moves it.
+[[gate]]
+id = "name-screen"
+binds_to = ["ingest"]
+on_fail = "block"
+authority = "attorney"
+
+[gate.options]
+terms = ["Roberta Vance"]
+note = "ethical wall"
+
+[[gate]]
+id = "notice-parser"
+binds_to = ["ingest"]
+on_fail = "bounce"
+authority = "paralegal"
 
 [[gate]]
 id = "sender-scope"
@@ -1012,16 +1135,11 @@ on_fail = "bounce"
 authority = "paralegal"
 
 [gate.options]
-allow = ["@myflcourtaccess.com", "@uscourts.gov", "@circuit19.example"]
+allow = ["@myflcourtaccess.com", "@uscourts.gov", "@circuit19.example",
+         "@demofirm.example"]
 
 [[gate]]
 id = "attachment-policy"
-binds_to = ["ingest"]
-on_fail = "bounce"
-authority = "paralegal"
-
-[[gate]]
-id = "notice-parser"
 binds_to = ["ingest"]
 on_fail = "bounce"
 authority = "paralegal"
@@ -1052,16 +1170,17 @@ def _user_errors():
     tuple keeps its traceback on purpose: an unexpected crash is a bug in
     Docketry, and swallowing it into a tidy message is how bugs go unreported.
     """
-    from .cite import CiteError
-    from .extract import ExtractionError
-    from .llm import LLMError
-    from .manifest import ManifestError
-    from .notices import AdapterError
-    from .redact import RedactionError
-    from .roles import RoleError
-    from .workflow import WorkflowError
+    from .tools.cite import CiteError
+    from .tools.extract import ExtractionError
+    from .tools.llm import LLMError
+    from .core.manifest import ManifestError
+    from .tools.notices import AdapterError
+    from .tools.redact import RedactionError
+    from .core.roles import RoleError
+    from .wizard import WizardAborted
+    from .tools.workflow import WorkflowError
     return (AdapterError, CiteError, ExtractionError, LLMError, ManifestError,
-            RedactionError, RoleError, WorkflowError)
+            RedactionError, RoleError, WizardAborted, WorkflowError)
 
 
 def main(argv=None) -> None:
@@ -1076,6 +1195,10 @@ def main(argv=None) -> None:
     sp.add_argument("--folder")
     sp.add_argument("--store-password", action="store_true",
                     help="prompt for the password and store it in config.toml (0600)")
+    sp.add_argument("--wizard", action="store_true",
+                    help="ask the setup questions even if --host/--user were given")
+    sp.add_argument("--no-wizard", action="store_true",
+                    help="write a starter manifest instead of asking")
     sp.set_defaults(fn=cmd_init)
 
     sp = sub.add_parser("poll", help="sweep the intake mailbox once")
@@ -1233,6 +1356,9 @@ def main(argv=None) -> None:
     sp.add_argument("--port", type=int, default=0)
     sp.add_argument("--no-browser", action="store_true")
     sp.set_defaults(fn=cmd_demo)
+
+    sp = sub.add_parser("anchor", help="print the approval chain's head, to keep off this machine")
+    sp.set_defaults(fn=cmd_anchor)
 
     sp = sub.add_parser("status", help="message counts by status")
     sp.set_defaults(fn=cmd_status)

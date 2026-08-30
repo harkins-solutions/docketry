@@ -1,7 +1,7 @@
 import unittest
 from email.message import EmailMessage
 
-from docketry.envelope import parse_message, sanitize_filename
+from docketry.core.envelope import parse_message, sanitize_filename
 
 
 def make_raw(subject="Service of Court Documents", attach=True, html=False):

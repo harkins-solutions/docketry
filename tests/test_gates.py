@@ -1,7 +1,7 @@
 import unittest
 
-from docketry.envelope import Attachment, Envelope
-from docketry.gates.builtin import AttachmentPolicy, SenderScope
+from docketry.core.envelope import Attachment, Envelope
+from docketry.core.gates.builtin import AttachmentPolicy, SenderScope
 
 
 def env(attachments=None, from_addr="noreply@myflcourtaccess.com"):
@@ -70,7 +70,7 @@ if __name__ == "__main__":
 
 class TestNameScreen(unittest.TestCase):
     def test_screened_name_holds_across_fields(self):
-        from docketry.gates.builtin import NameScreen
+        from docketry.core.gates.builtin import NameScreen
         g = NameScreen()
         opts = {"terms": ["Walled Party LLC"], "note": "ethical wall"}
         hit = g.check(env(attachments=[attach("Walled Party LLC agreement.pdf")]), opts)
@@ -81,14 +81,14 @@ class TestNameScreen(unittest.TestCase):
         self.assertEqual(len(g.check(e, opts)), 1)
 
     def test_word_boundaries_prevent_substring_hits(self):
-        from docketry.gates.builtin import NameScreen
+        from docketry.core.gates.builtin import NameScreen
         g = NameScreen()
         e = env()
         e.body_text = "the market analysis"
         self.assertEqual(g.check(e, {"terms": ["Mark"]}), [])
 
     def test_options_validated(self):
-        from docketry.gates.builtin import NameScreen
+        from docketry.core.gates.builtin import NameScreen
         self.assertTrue(NameScreen().validate_options({}))
         self.assertTrue(NameScreen().validate_options({"terms": []}))
         self.assertEqual(NameScreen().validate_options({"terms": ["X"]}), [])

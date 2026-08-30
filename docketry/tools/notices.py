@@ -24,7 +24,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .envelope import Envelope
+from ..core.envelope import Envelope
 
 NOTICE_TYPES = ("service_notice", "filing_receipt", "hearing_notice")
 

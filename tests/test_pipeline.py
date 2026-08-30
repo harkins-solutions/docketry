@@ -1,10 +1,11 @@
 import tempfile
 import unittest
+from pathlib import Path
 
-from docketry import store as st
-from docketry.envelope import Attachment, Envelope
-from docketry.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
-from docketry.store import Store
+from docketry.core import store as st
+from docketry.core.envelope import Attachment, Envelope
+from docketry.core.pipeline import Finding, GateBinding, GateRefusal, Pipeline, Runner, SEVERITY_FAIL
+from docketry.core.store import Store, StoreIntegrityError
 
 
 def env(attachments=None, from_addr="portal@court.gov"):
@@ -39,6 +40,73 @@ def build(tmp, on_fail):
         bindings=[GateBinding(gate=FailingGate(), binds_to=["ingest"], on_fail=on_fail, authority="attorney")],
     )
     return store, Runner(pipeline, store)
+
+
+class ContentGate:
+    """A gate of the kind third parties are invited to write: it reads bytes."""
+    id = "reads-content"
+    allowed_stages = None
+
+    def __init__(self):
+        self.seen = []
+
+    def check(self, envelope, options):
+        self.seen.append([a.content for a in envelope.attachments])
+        if any(b"CONTRABAND" in a.content for a in envelope.attachments):
+            return [Finding(self.id, SEVERITY_FAIL, "found it")]
+        return []
+
+
+class TestAttachmentBytesSurviveARerun(unittest.TestCase):
+    """A gate that inspects bytes must see the same bytes on every run.
+
+    The runner rebuilt attachments with empty content, so a plugin gate would
+    work at ingest — where the parsed message is still in hand — and silently
+    find nothing when advance() re-ran it. The shipped gates only read
+    filenames, which is why nothing caught it.
+    """
+
+    def _fixture(self, tmp, payload):
+        import hashlib
+        store = Store(tmp)
+        gate = ContentGate()
+        pipeline = Pipeline(
+            stages=["ingest", "review"],
+            bindings=[GateBinding(gate=gate, binds_to=["ingest", "review"],
+                                  on_fail="bounce", authority="attorney")],
+        )
+        a = Attachment(filename="doc.pdf", content_type="application/pdf",
+                       sha256=hashlib.sha256(payload).hexdigest(),
+                       size=len(payload), content=payload)
+        msg_id = store.ingest(env(attachments=[a]), first_stage="ingest")
+        return store, gate, Runner(pipeline, store), msg_id
+
+    def test_advance_hands_the_gate_the_real_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store, gate, runner, msg_id = self._fixture(tmp, b"%PDF harmless")
+            runner.enter(msg_id)
+            runner.advance(msg_id)
+            self.assertEqual(len(gate.seen), 2)     # ingest, then review
+            for seen in gate.seen:
+                self.assertEqual(seen, [b"%PDF harmless"])
+
+    def test_a_hold_is_not_released_by_re_running_a_blind_gate(self):
+        # The trap this closes: the gate fails at ingest on the bytes, then
+        # passes on the re-run because it was handed nothing to look at.
+        with tempfile.TemporaryDirectory() as tmp:
+            store, gate, runner, msg_id = self._fixture(tmp, b"CONTRABAND")
+            self.assertEqual(runner.enter(msg_id), st.PENDING_REVIEW)
+            with self.assertRaises(GateRefusal):
+                runner.advance(msg_id)
+
+    def test_bytes_that_no_longer_match_their_digest_are_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            store, gate, runner, msg_id = self._fixture(tmp, b"%PDF harmless")
+            runner.enter(msg_id)
+            row = store.attachments_for(msg_id)[0]
+            Path(row["path"]).write_bytes(b"something else entirely")
+            with self.assertRaises(StoreIntegrityError):
+                runner.advance(msg_id)
 
 
 class TestRunner(unittest.TestCase):

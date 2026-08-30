@@ -113,18 +113,28 @@ class Runner:
         return status
 
     def _envelope(self, msg_id: int) -> Envelope:
+        """The stored envelope, with attachment bytes read back from disk.
+
+        The bytes matter. A gate that inspects a document's contents gets the
+        real thing at ingest, where the parsed message is still in hand; if
+        this rebuilt attachments empty, that same gate would quietly find
+        nothing when advance() re-ran it. Re-running gates is the whole basis
+        on which a hold is trusted, so the re-run has to see what the first
+        run saw. The store verifies each digest as it reads.
+        """
         import json
 
         row = self.store.get_message(msg_id)
         if row is None:
             raise KeyError(f"no message {msg_id}")
         d = json.loads(row["envelope_json"])
-        d["attachments"] = [
-            {**a, "content": b""} for a in d.get("attachments", [])
-        ]
+        blobs = self.store.attachment_bytes(msg_id)
         from .envelope import Attachment
 
-        d["attachments"] = [Attachment(**a) for a in d["attachments"]]
+        d["attachments"] = [
+            Attachment(**{**a, "content": blobs.get(a["sha256"], b"")})
+            for a in d.get("attachments", [])
+        ]
         return Envelope(**d)
 
     # -- public API ------------------------------------------------------

@@ -11,7 +11,48 @@ the firm didn't send across the boundary.
 Docketry is the **base layer** of a family of small, composable open-source
 legal workflow tools (document classification, e-service notice parsing,
 citation verification, draft linting). Each plugs into the port as a **gate**
-in a declared pipeline.
+in a declared pipeline — and the package is laid out so you can check that
+rather than take it on faith:
+
+```
+docketry/
+  core/     the port — envelope, pipeline, store, manifest, roles, config,
+            and the gate registry with the hygiene gates.  ~1,700 lines.
+  tools/    the family — classification, notice parsing, citation work,
+            redaction, timelines, exports, reconciliation, linting, matter
+            workflow, contacts, reporting, and the optional local model.
+  cli.py    the command line, the review UI, and the setup wizard.
+  webui.py
+  wizard.py
+```
+
+`tools/` imports `core/`. `core/` imports nothing above it, and
+`tests/test_boundaries.py` fails the build if that stops being true. The
+notice parser and the document classifier plug in as gates by registering
+with the port's registry — the same route a third-party gate takes, so the
+extension story is the one the shipped code already uses.
+
+## Why a firm installs this
+
+Two of the gates are the reason. The rest are hygiene.
+
+**The ethical wall.** List the parties or matters a reviewer must not see
+flowing through intake unreviewed. Anything mentioning one stops — not warns,
+stops — and the only thing that moves it is a recorded release by the role
+your manifest names. What that leaves behind is a row saying who released it
+and when, on the firm's own disk. A screen that maps to a bar rule is worth
+having; a screen you can show someone the record of is worth more, and that
+record is the thing a grievance actually asks about.
+
+**Court e-service.** Docketry parses service and docket notices into case
+numbers, document titles and dates — and holds any notice it cannot read
+instead of guessing. A misread hearing date is a malpractice claim. An unread
+one is a phone call. When a portal changes its template, the queue says so
+rather than quietly extracting nothing.
+
+Everything else here — attachment types, sender scope, size caps — is
+pipeline hygiene. Useful, worth having on, and not why anyone would install
+this. `docketry demo` shows the two above, and the rest as an afterthought.
 
 ## What makes it different
 
@@ -24,7 +65,10 @@ Best practices here are **code, not suggestions**:
 - Gates declare which pipeline stages they are meant for; binding one
   elsewhere is a load-time error, not a footnote in documentation.
 - Every finding and every human approval lands in an audit table on the
-  firm's own disk.
+  firm's own disk, **hash-chained**: each approval carries a digest over its
+  own content and the digest of the row before it, so an edited, deleted or
+  reordered release stops verifying. `docketry doctor` checks the chain and
+  fails if it is broken. Read the next section for what that is worth.
 
 ## What it is not
 
@@ -45,15 +89,49 @@ Best practices here are **code, not suggestions**:
   rule, deadline, or authority is up to date. It checks the inputs you give
   it against the sources you point it at, and it fails loudly.
 
+## The approval log, and what a hash chain is worth
+
+Approvals are chained, and `docketry anchor` prints the head:
+
+```console
+$ docketry anchor
+docketry-anchor 2026-08-29T21:14:03+00:00 approvals=118 head=9f2c...e41
+```
+
+An intact chain means nothing in the log was edited, deleted or reordered
+after it was written. It does **not** mean the log is authentic, and the
+difference matters if this is ever the record being questioned. The database
+sits on the firm's own disk with no key, so anyone who can edit a row can
+recompute every digest after it and hand you a chain that verifies. A test in
+`tests/test_chain.py` does exactly that, on purpose, so nobody mistakes the
+property for more than it is.
+
+What makes a rewritten history detectable is the anchor: a copy of the head
+kept somewhere the editor cannot reach. Mail the line to yourself, paste it
+into a case note, print it, or let `docketry digest` carry it into whatever
+daily summary the firm already sends. Once that line is somewhere the firm
+does not administer, a rewritten log contradicts something that already left
+the building — and that contradiction is the finding.
+
+The chain catches the careless edit on its own. The anchor is what makes the
+deliberate one need an accomplice. Docketry never sends anything, so moving
+the anchor off the machine is the one step that stays yours.
+
 ## Data at rest
 
 Docketry stores messages and attachments in plaintext SQLite and files in
-its home directory, protected by file permissions (config is written 0600).
-It does NOT do application-level encryption, deliberately: an encrypted
-database whose key sits on the same disk is comfort, not protection. Protect
-a Docketry home the way you protect the rest of the client file system —
-OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
+its home directory, protected by file permissions (config.toml is *created*
+0600 — not written and then tightened, so a stored password is never briefly
+world-readable). It does NOT do application-level encryption, deliberately: an
+encrypted database whose key sits on the same disk is comfort, not protection.
+Protect a Docketry home the way you protect the rest of the client file system
+— OS full-disk encryption (BitLocker / FileVault / LUKS) and OS accounts.
 Nothing is ever copied off the machine.
+
+On Windows that 0600 buys you nothing: `chmod` there moves the read-only bit
+and says nothing about who else may read the file, whose permissions come from
+the folder it sits in. On Windows, set `DOCKETRY_IMAP_PASSWORD` in the
+environment instead of storing the password — `docketry init` says so too.
 
 ## Bring your own model (optional, local only)
 
@@ -90,18 +168,20 @@ $ pip install docketry   # or grab a one-file executable from Releases
 $ docketry demo
 ```
 
-`demo` seeds a disposable home with sample traffic — a clean service notice,
-a federal NEF, a hearing notice, a drifted portal template, and an unknown
-sender — and opens the local dashboard so you can watch the gates hold the
-right three and release them yourself. No mailbox, no configuration, nothing
-saved. (Downloadable one-file executables for Windows/macOS/Linux attach to
-tagged releases — double-clicking one opens this same demo.)
+`demo` seeds a disposable home with sample traffic and opens the local
+dashboard. Three messages pass clean. Three stop: a conflicts email naming a
+screened party (blocked by the wall, attorney-only release), a court e-service
+notice whose portal changed its template (held rather than guessed at), and an
+unknown sender with an attachment (hygiene). You release them yourself and
+watch the audit rows appear. No mailbox, no configuration, nothing saved.
+(Downloadable one-file executables for Windows/macOS/Linux attach to tagged
+releases — double-clicking one opens this same demo.)
 
 ## Quickstart
 
 ```console
 $ pip install docketry
-$ docketry init --host imap.gmail.com --user intake@yourfirm.com
+$ docketry init        # asks; writes config.toml, guardrails.toml, roles.toml
 $ export DOCKETRY_IMAP_PASSWORD='app-password-here'
 $ docketry poll        # sweep the intake mailbox once
 $ docketry queue       # see anything a gate held for review
@@ -109,9 +189,17 @@ $ docketry approve 3 --gate sender-scope --by "Dana" --role paralegal
 $ docketry status
 ```
 
-The pipeline is declared in `guardrails.toml` in your Docketry home directory
-(see `examples/guardrails.toml`). Reading the intake mailbox is strictly
-read-only: messages are never marked, moved, or deleted.
+`init` asks nine questions in plain words — which mailbox, what your firm
+calls the person who reviews intake, who can release a conflict hold, which
+names are behind the wall — and writes the three config files from the
+answers, commented, so nobody has to author TOML to get started. It guesses
+the IMAP host from the address and never writes a home that refuses to load.
+Pass `--host` and `--user` to skip the questions for scripted installs.
+
+Everything it writes is an ordinary file you can edit afterwards: the pipeline
+lives in `guardrails.toml` in your Docketry home (see `examples/`), the roles
+in `roles.toml`. Reading the intake mailbox is strictly read-only: messages
+are never marked, moved, or deleted.
 
 ## Skills starter pack
 

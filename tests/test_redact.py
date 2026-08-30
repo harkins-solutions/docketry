@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from docketry.redact import (
+from docketry.tools.redact import (
     MARKER,
     Box,
     RedactionError,
@@ -166,12 +166,12 @@ class TestApplyEndToEnd(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_source_text_starts_extractable(self):
-        from docketry.extract import extract_path
+        from docketry.tools.extract import extract_path
         self.assertIn("QUAGGA", extract_path(self.src, ocr="never").full_text.upper())
 
     def test_redacted_word_is_gone_and_page_stays_searchable(self):
-        from docketry.redact import Box, apply
-        from docketry.extract import extract_path
+        from docketry.tools.redact import Box, apply
+        from docketry.tools.extract import extract_path
         # Second line sits lower on the page; box it.
         res = apply(self.src,
                     [Box(page=1, x0=0.05, y0=0.13, x1=0.75, y1=0.20)],
@@ -185,8 +185,8 @@ class TestApplyEndToEnd(unittest.TestCase):
 
 
     def test_text_layer_says_redacted_rather_than_going_silent(self):
-        from docketry.redact import Box, apply
-        from docketry.extract import extract_path
+        from docketry.tools.redact import Box, apply
+        from docketry.tools.extract import extract_path
         apply(self.src, [Box(page=1, x0=0.05, y0=0.13, x1=0.75, y1=0.20)],
               self.out, verify_terms=["QUAGGA"])
         text = extract_path(self.out, ocr="never").full_text.upper()
@@ -195,7 +195,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         self.assertNotIn("QUAGGA", text)
 
     def test_marker_is_not_reported_as_a_survivor(self):
-        from docketry.redact import Box, apply
+        from docketry.tools.redact import Box, apply
         res = apply(self.src, [Box(page=1, x0=0.05, y0=0.13, x1=0.75, y1=0.20)],
                     self.out, verify_terms=["QUAGGA"])
         self.assertEqual(res.survivors, [])
@@ -209,7 +209,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         this and would refuse every real filing, whose prose repeats headers
         and labels dozens of times. The burn is fine; the question was wrong.
         """
-        from docketry.redact import Box, apply
+        from docketry.tools.redact import Box, apply
         src = _text_pdf(self.tmp / "repeat.pdf", [
             "EXHIBIT LIST", "WITNESS EXHIBIT ALPHA", "EXHIBIT INDEX",
         ])
@@ -230,7 +230,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         uniformly; it is wrong the moment anyone prints or stamps it.
         """
         from pypdf import PdfReader
-        from docketry.redact import Box, apply
+        from docketry.tools.redact import Box, apply
         before = PdfReader(str(self.src)).pages[0].mediabox
         apply(self.src, [Box(page=1, x0=0.05, y0=0.13, x1=0.75, y1=0.20)], self.out)
         after = PdfReader(str(self.out)).pages[0].mediabox
@@ -245,7 +245,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         for afterwards, so reporting it as verified would hand an image
         redaction a guarantee the check never made.
         """
-        from docketry.redact import Box, apply
+        from docketry.tools.redact import Box, apply
         # Bottom half of the fixture holds no text at all.
         res = apply(self.src, [Box(page=1, x0=0.1, y0=0.60, x1=0.6, y1=0.72)],
                     self.out)
@@ -255,7 +255,7 @@ class TestApplyEndToEnd(unittest.TestCase):
 
 
     def test_find_terms_locates_a_term_and_writes_nothing(self):
-        from docketry.redact import find_terms
+        from docketry.tools.redact import find_terms
         before = sorted(p.name for p in self.tmp.iterdir())
         hits = find_terms(self.src, ["QUAGGA"])
         self.assertEqual(len(hits), 1)
@@ -265,7 +265,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), before)
 
     def test_find_terms_matches_inside_a_longer_word(self):
-        from docketry.redact import find_terms
+        from docketry.tools.redact import find_terms
         self.assertTrue(find_terms(self.src, ["quag"]))
 
 
@@ -275,8 +275,8 @@ class TestApplyEndToEnd(unittest.TestCase):
         Without a marker the bar is unlabelled and the extracted text has an
         unexplained hole — which is exactly why it is not the default.
         """
-        from docketry.redact import Box, apply
-        from docketry.extract import extract_path
+        from docketry.tools.redact import Box, apply
+        from docketry.tools.extract import extract_path
         apply(self.src, [Box(page=1, x0=0.05, y0=0.13, x1=0.75, y1=0.20)],
               self.out, marker=None)
         text = extract_path(self.out, ocr="never").full_text.upper()
@@ -289,7 +289,7 @@ class TestApplyEndToEnd(unittest.TestCase):
         The burn worked, so this must not block — but nobody should have to
         notice the second occurrence on their own.
         """
-        from docketry.redact import Box, apply, find_terms
+        from docketry.tools.redact import Box, apply, find_terms
         src = _text_pdf(self.tmp / "twice.pdf", [
             "WITNESS QUAGGA TESTIFIED", "SEE ALSO QUAGGA EXHIBIT",
         ])
@@ -300,8 +300,8 @@ class TestApplyEndToEnd(unittest.TestCase):
         self.assertEqual(res.also_appears, ["quagga"])  # but say it is elsewhere
 
     def test_untouched_page_keeps_original_text(self):
-        from docketry.redact import Box, apply
-        from docketry.extract import extract_path
+        from docketry.tools.redact import Box, apply
+        from docketry.tools.extract import extract_path
         src2 = _text_pdf(self.tmp / "two.pdf", ["ONLY PAGE ZEBRAFISH"])
         res = apply(src2, [Box(page=1, x0=0.05, y0=0.85, x1=0.5, y1=0.95,
                                kind="highlight")], self.out)
@@ -309,18 +309,18 @@ class TestApplyEndToEnd(unittest.TestCase):
         self.assertIn("ZEBRAFISH", extract_path(self.out, ocr="never").full_text.upper())
 
     def test_verify_reports_a_survivor(self):
-        from docketry.redact import verify
+        from docketry.tools.redact import verify
         self.assertEqual(verify(self.src, ["QUAGGA"]), ["quagga"])
 
 
 class TestRefusals(unittest.TestCase):
     def test_apply_refuses_empty_box_list(self):
-        from docketry.redact import apply
+        from docketry.tools.redact import apply
         with self.assertRaises(RedactionError):
             apply("nonexistent.pdf", [], "out.pdf")
 
     def test_find_terms_refuses_empty_terms(self):
-        from docketry.redact import find_terms
+        from docketry.tools.redact import find_terms
         with self.assertRaises(RedactionError):
             find_terms("nonexistent.pdf", [])
         with self.assertRaises(RedactionError):
@@ -333,13 +333,13 @@ if __name__ == "__main__":
 
 class TestVerifyRefusesAnEmptyCheck(unittest.TestCase):
     def test_all_terms_too_short_raises_instead_of_reporting_clean(self):
-        from docketry.redact import RedactionError, verify
+        from docketry.tools.redact import RedactionError, verify
         with self.assertRaises(RedactionError) as ctx:
             verify(__file__, ["x", "an"])
         self.assertIn("nothing to check", str(ctx.exception))
 
     def test_a_usable_term_alongside_a_short_one_still_checks(self):
-        from docketry.redact import verify
+        from docketry.tools.redact import verify
         tmp = Path(tempfile.mkdtemp()) / "doc.txt"
         tmp.write_text("the witness QUAGGA testified")
         # The long term is checkable, so the check runs and finds it.
@@ -350,7 +350,7 @@ class TestMissingDependencyMessage(unittest.TestCase):
     """What to do about it differs by how you installed Docketry."""
 
     def test_a_pip_install_is_told_to_add_the_extra(self):
-        from docketry.redact import _missing
+        from docketry.tools.redact import _missing
         msg = _missing("pytesseract", "ocr", "redaction")
         self.assertIn("pip install 'docketry[ocr]'", msg)
         self.assertNotIn("this build", msg)
@@ -360,7 +360,7 @@ class TestMissingDependencyMessage(unittest.TestCase):
         # person running a one-file build cannot do — it reads as broken
         # rather than incomplete.
         import sys
-        from docketry.redact import _missing
+        from docketry.tools.redact import _missing
         sys.frozen = True
         try:
             msg = _missing("pytesseract", "ocr", "redaction")

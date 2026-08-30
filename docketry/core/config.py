@@ -4,7 +4,13 @@ A Docketry "home" is one directory holding config.toml, the guardrail
 manifest, the SQLite store, and attachments — the whole installation is one
 folder on the firm's own disk. The IMAP password is read from the
 DOCKETRY_IMAP_PASSWORD environment variable first; storing it in config.toml
-is supported for single-machine setups (the file is chmod 0600 on write).
+is supported for single-machine setups (the file is created 0600).
+
+That 0600 is a POSIX guarantee and nothing more. On Windows os.chmod moves the
+read-only bit and says nothing about who else may read the file, which inherits
+its ACL from the directory — so on Windows the environment variable is the only
+way to keep the password off a readable disk, and `init` says so out loud
+rather than leaving the number to imply a protection it does not have.
 """
 from __future__ import annotations
 
@@ -14,12 +20,27 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from .llm import LLMConfig
 from .mailbox import MailboxConfig
 
 CONFIG_NAME = "config.toml"
 MANIFEST_NAME = "guardrails.toml"
 STORE_DIR = "store"
+
+# Two minutes: a local model on modest hardware answering a long prompt.
+DEFAULT_LLM_TIMEOUT = 120.0
+
+
+@dataclass
+class LLMConfig:
+    """Where the firm's own model lives, if it configured one.
+
+    The settings live here rather than in the client that uses them, so the
+    port can read a config file without importing anything from tools. The
+    client that vets the endpoint and speaks to it is docketry.tools.llm.
+    """
+    base_url: str
+    model: str
+    timeout: float = DEFAULT_LLM_TIMEOUT
 
 
 @dataclass
@@ -56,8 +77,16 @@ def write_config(
     if password:
         lines.append(f'password = "{password}"')
     lines.append("")
-    cfg.write_text("\n".join(lines))
-    os.chmod(cfg, stat.S_IRUSR | stat.S_IWUSR)
+    # Created 0600, not fixed up afterwards. write_text() followed by chmod
+    # leaves a window — short, but a window — in which the password sits on
+    # disk at whatever the umask allows, and any process that opened it in
+    # that window keeps its handle after the mode changes.
+    mode = stat.S_IRUSR | stat.S_IWUSR
+    if cfg.exists():
+        os.chmod(cfg, mode)      # O_CREAT's mode is ignored for an existing file
+    fd = os.open(cfg, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "w") as fh:
+        fh.write("\n".join(lines))
     return cfg
 
 

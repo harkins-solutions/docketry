@@ -16,9 +16,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 
-from . import store as st
-from .pipeline import Runner
-from .store import Store
+from .core import store as st
+from .core.pipeline import Runner
+from .core.roles import refuse_approval
+from .core.store import Store
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="refresh" content="60">
@@ -47,7 +48,27 @@ def _esc(v) -> str:
     return html.escape(str(v), quote=True)
 
 
-def _render(store: Store, pipeline, token: str) -> str:
+def _role_field(registry, gate_id: str, required: str) -> str:
+    """The role an approval is recorded under.
+
+    Without a registry there is nothing to choose between, so the gate's own
+    authority is submitted as before. With one, anyone whose may_release
+    covers this gate can be picked — otherwise seniority works at the command
+    line and not here, which is where most people will actually click.
+    """
+    if registry is None:
+        return f'<input type="hidden" name="role" value="{_esc(required)}">'
+    allowed = [r for r in registry.names()
+               if registry.can_release(r, gate_id, required)]
+    if allowed == [required]:
+        return f'<input type="hidden" name="role" value="{_esc(required)}">'
+    opts = "".join(
+        f'<option value="{_esc(r)}"{" selected" if r == required else ""}>'
+        f'{_esc(r)}</option>' for r in allowed)
+    return f'<select name="role">{opts}</select> '
+
+
+def _render(store: Store, pipeline, token: str, registry=None) -> str:
     counts = store.counts() or {}
     counts_html = "".join(
         f'<span class="badge {"held" if k in (st.PENDING_REVIEW, st.BLOCKED) else "done" if k == st.DONE else ""}">{_esc(k)}: {v}</span>'
@@ -70,8 +91,8 @@ def _render(store: Store, pipeline, token: str) -> str:
             f'<input type="hidden" name="message" value="{row["id"]}">'
             f'<input type="hidden" name="gate" value="{_esc(g)}">'
             f'<input type="text" name="by" placeholder="your name" required> '
-            f'<button>approve {_esc(g)} as {_esc(auth.get(g, "?"))}</button>'
-            f'<input type="hidden" name="role" value="{_esc(auth.get(g, ""))}">'
+            + _role_field(registry, g, auth.get(g, "")) +
+            f'<button>approve {_esc(g)}</button>'
             f'</form> '
             for g in gates
         )
@@ -153,7 +174,7 @@ def _adapters_path(home: Path) -> Path:
 
 
 def _existing_adapters(home: Path) -> str:
-    from .notices import AdapterError, load_adapters_file
+    from .tools.notices import AdapterError, load_adapters_file
     path = _adapters_path(home)
     if not path.exists():
         return ('<p class="hint">None yet — only the built-in adapters are'
@@ -185,7 +206,7 @@ def _paste_form(token: str, sample: str = "") -> str:
 
 
 def _candidate_form(token: str, sample: str, env, cands, suggested: dict) -> str:
-    from .notices import NOTICE_TYPES
+    from .tools.notices import NOTICE_TYPES
     if not cands:
         return ('<p class="f">No labelled fields found in that message.</p>'
                 '<p class="hint">Docketry looks for lines like'
@@ -334,7 +355,7 @@ def _report_body(rep) -> str:
 
 
 def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
-                home=None, firm_domains=(), directory=None):
+                home=None, firm_domains=(), directory=None, registry=None):
     # adapters.toml lives in the Docketry home, beside the store.
     home = Path(home) if home else Path(store_path).parent
     if host != "127.0.0.1":
@@ -373,7 +394,7 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                 self._adapters_page()
                 return
             if self.path in ("/report", "/report/"):
-                from .report import build
+                from .tools.report import build
                 store = self._store()
                 try:
                     rep = build(store, pipeline, days=30,
@@ -389,15 +410,15 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                 return
             store = self._store()
             try:
-                self._html(_render(store, pipeline, token))
+                self._html(_render(store, pipeline, token, registry))
             finally:
                 store.close()
 
 
         def _save_adapter(self, form):
             """Build it, run it against the pasted email, save only if it works."""
-            from .adapter_builder import build, scan, scan_email, to_toml
-            from .notices import AdapterError, load_adapters_file
+            from .tools.adapter_builder import build, scan, scan_email, to_toml
+            from .tools.notices import AdapterError, load_adapters_file
 
             sample = form.get("sample", "")
             try:
@@ -476,16 +497,24 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                     row = store.get_message(msg_id)
                     bindings = {b.gate.id: b for b in pipeline.bindings_for(row["stage"])}
                     binding = bindings.get(form.get("gate", ""))
-                    if row is None or binding is None or form.get("role") != binding.authority:
-                        self._html("approval refused: unknown gate or wrong role", 400)
+                    if row is None or binding is None:
+                        self._html("approval refused: unknown gate", 400)
                         return
-                    if not form.get("by", "").strip():
+                    by = form.get("by", "").strip()
+                    if not by:
                         self._html("approval refused: approver name required", 400)
                         return
+                    refusal = refuse_approval(
+                        registry, person=by, role=form.get("role", ""),
+                        gate_id=binding.gate.id, required=binding.authority)
+                    if refusal:
+                        self._html(f"approval refused: {_esc(refusal)}", 400)
+                        return
                     store.add_approval(msg_id, row["stage"], binding.gate.id,
-                                       approved_by=form["by"].strip(),
-                                       role=binding.authority, note="via local ui")
-                    runner = Runner(pipeline, store)
+                                       approved_by=by,
+                                       role=form.get("role", ""),
+                                       note="via local ui")
+                    runner = Runner(pipeline, store, registry=registry)
                     try:
                         status = runner.advance(msg_id)
                         while status == st.OK:
@@ -502,7 +531,7 @@ def make_server(store_path, pipeline, host="127.0.0.1", port=8642,
                                                role=form["role"].strip())
                     self._redirect()
                 elif self.path == "/adapters/scan":
-                    from .adapter_builder import (
+                    from .tools.adapter_builder import (
                         scan, scan_email, suggest_match, suggest_type)
                     sample = form.get("sample", "")
                     if not sample.strip():

@@ -2,9 +2,9 @@
 import unittest
 from pathlib import Path
 
-from docketry.lint import load_rulepack
-from docketry.manifest import load_manifest
-from docketry.notices import load_adapters_file
+from docketry.tools.lint import load_rulepack
+from docketry.core.manifest import load_manifest
+from docketry.tools.notices import load_adapters_file
 
 EXAMPLES = Path("examples")
 SKILLS = Path("skills")
@@ -23,6 +23,33 @@ class TestExamples(unittest.TestCase):
 
     def test_example_rulepack_loads(self):
         self.assertTrue(load_rulepack(EXAMPLES / "lint-rules.toml"))
+
+
+class TestTrackedFiles(unittest.TestCase):
+    def test_nothing_tracked_carries_a_merge_conflict_marker(self):
+        """FEATURES.md shipped with two of these in it for several releases.
+
+        Nobody reads a features document top to bottom, which is exactly why
+        a machine should.
+        """
+        import subprocess
+        markers = ("<" * 7 + " ", "=" * 7 + "\n", ">" * 7 + " ")
+        files = subprocess.run(["git", "ls-files"], capture_output=True,
+                               text=True, check=True).stdout.splitlines()
+        offenders = []
+        for f in files:
+            path = Path(f)
+            if path.suffix in (".png", ".jpg", ".pdf", ".ico") or not path.exists():
+                continue
+            if path.name == Path(__file__).name:
+                continue
+            try:
+                text = path.read_text(errors="ignore")
+            except OSError:
+                continue
+            if any(m in text for m in markers):
+                offenders.append(f)
+        self.assertEqual(offenders, [])
 
 
 class TestSkills(unittest.TestCase):

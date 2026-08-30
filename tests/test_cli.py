@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest import mock
 
 from docketry import cli
-from docketry import mailbox as mb
+from docketry.core import mailbox as mb
 
 try:
     import eyecite  # noqa: F401
@@ -17,14 +17,21 @@ except ImportError:
 
 
 def run_cli(*argv):
+    """Exit code and everything the user would see, refusal message included.
+
+    sys.exit("...") writes to stderr, so a test that only read stdout could
+    assert a non-zero code without ever checking that the reason was the one
+    it meant.
+    """
     out = io.StringIO()
-    code = 0
+    code, message = 0, ""
     with contextlib.redirect_stdout(out):
         try:
             cli.main(list(argv))
         except SystemExit as e:
             code = e.code if isinstance(e.code, int) else 1
-    return code, out.getvalue()
+            message = "" if isinstance(e.code, int) else str(e.code)
+    return code, out.getvalue() + message
 
 
 def eportal_raw():
@@ -152,11 +159,11 @@ class TestCliQol(unittest.TestCase):
 
     def _ingest_held(self):
         import json as _json
-        from docketry.config import load_home
-        from docketry.manifest import load_manifest
-        from docketry.envelope import parse_message
-        from docketry.pipeline import Runner
-        from docketry.store import Store, utcnow
+        from docketry.core.config import load_home
+        from docketry.core.manifest import load_manifest
+        from docketry.core.envelope import parse_message
+        from docketry.core.pipeline import Runner
+        from docketry.core.store import Store, utcnow
         m = EmailMessage()
         m["From"] = "stranger@x.net"; m["To"] = "intake@f.com"; m["Subject"] = "inv"
         m.set_content("pay")
@@ -223,6 +230,169 @@ class TestCliQol(unittest.TestCase):
         self.assertIn("done", out)
 
 
+class TestApprovalAuthority(unittest.TestCase):
+    """Seniority has to work through `approve`, not only inside advance().
+
+    The registry made `may_release` mean something in the runner, but the CLI
+    compared two strings before anything reached it — so an attorney could not
+    record an approval on a gate marked for a paralegal. That gap lived
+    between two test files, each of which passed.
+    """
+
+    ROLES = """
+[[role]]
+name = "paralegal"
+may_release = ["sender-scope"]
+
+[[role]]
+name = "attorney"
+may_release = ["*"]
+
+[[person]]
+name = "Dana Reyes"
+roles = ["paralegal"]
+"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = str(Path(self.tmp.name) / "home")
+        run_cli("--home", self.home, "init", "--host", "imap.x.com",
+                "--user", "intake@f.com")
+        Path(self.home, "roles.toml").write_text(self.ROLES)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    _ingest_held = TestCliQol._ingest_held
+
+    def _status(self, mid):
+        from docketry.core.config import load_home
+        from docketry.core.store import Store
+        store = Store(load_home(self.home).store_path)
+        try:
+            return store.get_message(mid)["status"]
+        finally:
+            store.close()
+
+    def test_a_senior_role_releases_a_junior_gate(self):
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Alex Vance",
+                            "--role", "attorney")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn(self._status(mid), ("blocked", "pending_review"))
+
+    def test_an_undeclared_role_is_refused(self):
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Alex Vance",
+                            "--role", "wizard")
+        self.assertNotEqual(code, 0)
+        self.assertIn("not a declared role", out)
+        self.assertEqual(self._status(mid), "pending_review")
+
+    def test_a_role_that_does_not_cover_the_gate_is_refused(self):
+        Path(self.home, "roles.toml").write_text(
+            '[[role]]\nname="paralegal"\nmay_release=["sender-scope"]\n'
+            '[[role]]\nname="attorney"\nmay_release=["attachment-policy"]\n')
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Alex Vance",
+                            "--role", "attorney")
+        self.assertNotEqual(code, 0)
+        self.assertIn("may_release", out)
+        self.assertEqual(self._status(mid), "pending_review")
+
+    def test_a_listed_person_cannot_claim_a_role_they_do_not_hold(self):
+        # The registry declares what Dana is. An attestation checked against
+        # that declaration is the only thing a system with no login can offer.
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Dana Reyes",
+                            "--role", "attorney")
+        self.assertNotEqual(code, 0)
+        self.assertIn("roles.toml lists Dana Reyes as paralegal", out)
+        self.assertEqual(self._status(mid), "pending_review")
+
+    def test_an_unlisted_person_is_not_blocked(self):
+        # Firms should not have to enumerate their staff to approve anything.
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Someone New",
+                            "--role", "paralegal")
+        self.assertEqual(code, 0, out)
+
+
+class TestAnchor(unittest.TestCase):
+    """The anchor is the half of the chain that leaves the machine."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = str(Path(self.tmp.name) / "home")
+        run_cli("--home", self.home, "init", "--host", "imap.x.com",
+                "--user", "intake@f.com")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    _ingest_held = TestCliQol._ingest_held
+
+    def _store(self):
+        from docketry.core.config import load_home
+        from docketry.core.store import Store
+        return Store(load_home(self.home).store_path)
+
+    def _approve(self):
+        mid = self._ingest_held()
+        code, out = run_cli("--home", self.home, "approve", str(mid),
+                            "--gate", "sender-scope", "--by", "Dana",
+                            "--role", "paralegal")
+        self.assertEqual(code, 0, out)
+        return mid
+
+    def test_anchor_prints_a_head_and_says_where_to_keep_it(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "anchor")
+        self.assertEqual(code, 0, out)
+        self.assertIn("docketry-anchor", out)
+        self.assertIn("approvals=1", out)
+        self.assertIn("cannot edit", out)
+        # Written to the home too, and honest about what that copy is worth.
+        log = Path(self.home, "anchors.log").read_text()
+        self.assertIn("head=", log)
+        self.assertIn("proves nothing", out)
+
+    def test_anchor_refuses_a_log_that_no_longer_verifies(self):
+        self._approve()
+        store = self._store()
+        with store.db:
+            store.db.execute("UPDATE approvals SET approved_by='Someone Else'")
+        store.close()
+        code, out = run_cli("--home", self.home, "anchor")
+        self.assertNotEqual(code, 0)
+        self.assertIn("BROKEN", out)
+        self.assertFalse(Path(self.home, "anchors.log").exists())
+
+    def test_doctor_fails_loudly_on_an_edited_approval_log(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 0)
+        self.assertIn("approval chain intact", out)
+        store = self._store()
+        with store.db:
+            store.db.execute("UPDATE approvals SET role='attorney'")
+        store.close()
+        code, out = run_cli("--home", self.home, "doctor")
+        self.assertEqual(code, 1)
+        self.assertIn("has been edited", out)
+
+    def test_the_digest_carries_the_head_so_a_daily_paste_anchors_it(self):
+        self._approve()
+        code, out = run_cli("--home", self.home, "digest")
+        self.assertEqual(code, 0)
+        self.assertIn("approvals head:", out)
+
+
 class TestDemo(unittest.TestCase):
     def test_demo_seeds_and_serves(self):
         import threading
@@ -241,8 +411,8 @@ class TestDemo(unittest.TestCase):
         from docketry import webui as webui_mod
         real_make = webui_mod.make_server
 
-        def capture_make(store_path, pipeline, host="127.0.0.1", port=0):
-            server = real_make(store_path, pipeline, host=host, port=port)
+        def capture_make(store_path, pipeline, host="127.0.0.1", port=0, **kw):
+            server = real_make(store_path, pipeline, host=host, port=port, **kw)
             started["server"] = server
             raise KeyboardInterrupt  # unwind out of serve_forever path
 
@@ -265,5 +435,11 @@ class TestDemo(unittest.TestCase):
         self.assertIn("Held for review", body)
         self.assertIn("sketchy.example", body)          # stranger held
         self.assertIn("did not extract", body)          # drifted template held
+        # The two the demo exists to show: the wall, and the unreadable notice.
+        self.assertIn("ethical wall", body)
+        self.assertIn("conflicts check", body)
+        # A blocked conflict is releasable by an attorney, not by the
+        # paralegal the routine gates name — the queue has to offer that.
+        self.assertIn('<option value="attorney"', body)
         self.assertIn("Hearing Scheduled", body.replace("&#x27;", "'")) if "Hearing" in body else None
         self.assertIn("service_notice", body)
