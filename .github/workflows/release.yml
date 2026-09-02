@@ -3,6 +3,9 @@ name: Release binaries
 on:
   push:
     tags: ["v*"]
+  # A manual run builds and smoke-tests the binaries without releasing
+  # anything: the release and publish jobs only run on a tag.
+  workflow_dispatch:
 
 jobs:
   build:
@@ -41,6 +44,49 @@ jobs:
       - name: Rename artifact
         shell: bash
         run: mv dist/docketry* "dist/${{ matrix.artifact }}" 2>/dev/null || mv dist/docketry.exe "dist/${{ matrix.artifact }}"
+      - name: Run the binary we just built
+        # The 0.15.0 binary shipped broken (pytesseract not bundled) and
+        # nothing here would have noticed: it was built, uploaded, and never
+        # run. Nothing ships without being executed at least once.
+        shell: bash
+        run: |
+          bin="dist/${{ matrix.artifact }}"
+          "$bin" --version
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            test "$("$bin" --version)" = "docketry ${GITHUB_REF_NAME#v}"
+          fi
+          "$bin" --home smoke-home init --host imap.example.com --user smoke@example.com
+          "$bin" --home smoke-home doctor | tee doctor.out
+          # The four lazily-imported extras must report available, or the
+          # bundle is missing a dependency the pip line was supposed to carry.
+          grep -q "PDF extraction available" doctor.out
+          grep -q "DOCX extraction available" doctor.out
+          grep -q "citation extraction available" doctor.out
+          grep -q "citation verification available" doctor.out
+          printf 'NOTICE OF HEARING\nCase No. 2026-CA-000123\n' > notice.txt
+          "$bin" classify notice.txt | grep -q "^notice"
+          printf 'Summary judgment is proper where there is no genuine dispute. Celotex Corp. v. Catrett, 477 U.S. 317, 322 (1986).\n' > draft.txt
+          # No token in CI, so exit 2 (extraction-only) is the contract; the
+          # citation line proves eyecite and its reporter data are bundled.
+          set +e
+          "$bin" verify-draft draft.txt > vd.out 2>&1
+          status=$?
+          set -e
+          cat vd.out
+          test "$status" -eq 2
+          grep -q "full citation(s) found" vd.out
+      - name: Prove OCR is bundled by using it
+        # Ubuntu only: the runner gets real tesseract, the PDF is image-only,
+        # so redact-scan finding the name proves pytesseract and Pillow made
+        # it into the bundle — the exact 0.15.0 failure.
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr poppler-utils
+          python .github/scripts/make_smoke_pdf.py
+          dist/${{ matrix.artifact }} redact-scan smoke.pdf --term QUAGGA | tee scan.out
+          grep -q "occurrence(s) on" scan.out
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
@@ -48,6 +94,7 @@ jobs:
 
   release:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -64,6 +111,7 @@ jobs:
 
   publish:
     needs: build
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
